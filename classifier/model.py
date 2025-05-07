@@ -1,14 +1,20 @@
 # classifier/model.py
 import json
 import yaml
-import openai
+from openai import OpenAI
 import logging
 from functools import lru_cache
 from typing import List, Optional, Union
 from config import settings
 
-openai.api_key = settings.OPENAI_API_KEY
+# Configure logger
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize OpenAI client
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
+logger.info(f"OpenAI API Key present: {bool(settings.OPENAI_API_KEY)}")
+logger.info(f"Classifier Model: {settings.CLASSIFIER_MODEL}")
 
 # 1) Load your allowed labels once
 @lru_cache(maxsize=1)
@@ -59,18 +65,28 @@ def predict_stance(
     ]
 
     def call_model(msgs):
-        return openai.ChatCompletion.create(
-            model=settings.CLASSIFIER_MODEL,
-            messages=msgs,
-            temperature=0.0,
-            max_tokens=256,
-        )
+        try:
+            response = client.chat.completions.create(
+                model=settings.CLASSIFIER_MODEL,
+                messages=msgs,
+                max_completion_tokens=256,
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Error calling OpenAI API: {e}")
+            raise
 
     # 1st attempt
     resp = call_model(messages)
     content = resp.choices[0].message.content.strip()
+    logger.info(f"OpenAI API Response: {content}")
 
     try:
+        # Handle empty content case
+        if not content:
+            logger.warning("Empty response from OpenAI API")
+            return []
+        
         labels = json.loads(content)
         if not isinstance(labels, list):
             raise ValueError("Response not a JSON list")

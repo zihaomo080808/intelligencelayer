@@ -1,12 +1,22 @@
 # embeddings/embedder.py
-import openai
+from openai import OpenAI
+import logging
 from config import settings
 
-openai.api_key = settings.OPENAI_API_KEY
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Initialize OpenAI client
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 def get_embedding(text: str):
-    resp = openai.Embedding.create(
-        model=settings.EMBEDDING_MODEL,
-        input=[text]
-    )
-    return resp["data"][0]["embedding"]
+    try:
+        logger.info(f"Generating embedding with model: {settings.EMBEDDING_MODEL}")
+        resp = client.embeddings.create(
+            model=settings.EMBEDDING_MODEL,
+            input=[text]
+        )
+        return resp.data[0].embedding
+    except Exception as e:
+        logger.error(f"Error generating embedding: {str(e)}")
+        raise Exception(f"Error generating embedding: {str(e)}")
