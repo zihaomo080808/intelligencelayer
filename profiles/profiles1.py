@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pgvector.sqlalchemy import Vector
 
-from database import Base, engine, AsyncSessionLocal
+from database import Base, AsyncSessionLocal
+from database.base import engine
 from config import settings  # in case you need it elsewhere
 
 class UserProfile(Base):
