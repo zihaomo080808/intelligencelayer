@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Recommender System Simulator</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Main interface with tabs -->
+    <div class="app-container">
+        <!-- Sidebar/tabs -->
+        <div class="sidebar">
+            <div class="app-logo">
+                <h2>AI Recommender</h2>
+            </div>
+            <div class="tabs">
+                <div class="tab active" data-tab="profile">
+                    <i class="fas fa-user"></i>
+                    <span>Profile</span>
+                </div>
+                <div class="tab" data-tab="recommendations">
+                    <i class="fas fa-list"></i>
+                    <span>Recommendations</span>
+                </div>
+                <div class="tab" data-tab="chat">
+                    <i class="fas fa-comment"></i>
+                    <span>Chat</span>
+                </div>
+                <div class="tab" data-tab="feedback">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Feedback</span>
+                </div>
+            </div>
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <img src="https://ui-avatars.com/api/?name=User&background=0275d8&color=fff" alt="User" class="user-avatar">
+                    <span id="displayed-user-id">test_user_123</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main content area -->
+        <div class="content-area">
+            <!-- Profile tab content -->
+            <div class="tab-content active" id="profile-tab">
+                <div class="tab-header">
+                    <h2>Create Your Profile</h2>
+                    <p>Tell us about yourself and your interests</p>
+                </div>
+                <div class="profile-form">
+                    <div class="form-group">
+                        <label for="profile-bio">About You (Bio)</label>
+                        <textarea id="profile-bio" rows="6" placeholder="I'm a software developer interested in AI and machine learning. I'm looking for hackathons and workshops where I can improve my skills..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="profile-location">Location</label>
+                        <input type="text" id="profile-location" placeholder="City, State">
+                    </div>
+                    <div class="form-group interests-group">
+                        <label>Interests</label>
+                        <div class="interest-tags">
+                            <span class="interest-tag">AI <i class="fas fa-times"></i></span>
+                            <span class="interest-tag">Machine Learning <i class="fas fa-times"></i></span>
+                            <span class="interest-tag">Hackathons <i class="fas fa-times"></i></span>
+                            <input type="text" id="new-interest" placeholder="Add interest...">
+                        </div>
+                    </div>
+                    <div class="embedding-visualization">
+                        <h3>Profile Embedding Visualization</h3>
+                        <div class="embedding-info">
+                            <div class="embedding-vector">
+                                [0.23, 0.56, 0.12, 0.89, ..., 0.45]
+                            </div>
+                            <div class="embedding-stats">
+                                <div class="stat-item">
+                                    <span class="stat-label">Dimensions:</span>
+                                    <span class="stat-value">1536</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Dominant Topics:</span>
+                                    <span class="stat-value">Technology (0.78), Education (0.65)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="update-profile" class="primary-button">Update Profile</button>
+                </div>
+            </div>
+
+            <!-- Recommendations tab content -->
+            <div class="tab-content" id="recommendations-tab">
+                <div class="tab-header">
+                    <h2>Your Recommendations</h2>
+                    <p>Based on your profile and feedback</p>
+                </div>
+                <div class="recommendations-list">
+                    <div class="recommendation-card">
+                        <div class="recommendation-header">
+                            <h3>AI for Good Hackathon</h3>
+                            <div class="recommendation-actions">
+                                <button class="like-button" data-id="rec1">
+                                    <i class="fas fa-thumbs-up"></i>
+                                </button>
+                                <button class="skip-button" data-id="rec1">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                                <button class="chat-button" data-id="rec1">
+                                    <i class="fas fa-comment"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="recommendation-body">
+                            <p class="recommendation-desc">Join us for an exciting weekend of AI development focused on solving social impact challenges. Perfect for beginners and experts alike!</p>
+                            <div class="recommendation-meta">
+                                <div class="meta-item">
+                                    <i class="fas fa-calendar"></i>
+                                    <span>June 15-16, 2025</span>
+                                </div>
+                                <div class="meta-item">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <span>Tech Hub Downtown</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="recommendation-footer">
+                            <div class="match-score">
+                                <span class="match-label">Match Score:</span>
+                                <div class="match-bar">
+                                    <div class="match-fill" style="width: 92%;"></div>
+                                </div>
+                                <span class="match-percent">92%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="recommendation-card">
+                        <div class="recommendation-header">
+                            <h3>Machine Learning Workshop</h3>
+                            <div class="recommendation-actions">
+                                <button class="like-button" data-id="rec2">
+                                    <i class="fas fa-thumbs-up"></i>
+                                </button>
+                                <button class="skip-button" data-id="rec2">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                                <button class="chat-button" data-id="rec2">
+                                    <i class="fas fa-comment"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="recommendation-body">
+                            <p class="recommendation-desc">A hands-on workshop covering the latest techniques in machine learning. Bring your laptop and be ready to code!</p>
+                            <div class="recommendation-meta">
+                                <div class="meta-item">
+                                    <i class="fas fa-calendar"></i>
+                                    <span>July 8, 2025</span>
+                                </div>
+                                <div class="meta-item">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <span>University Tech Center</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="recommendation-footer">
+                            <div class="match-score">
+                                <span class="match-label">Match Score:</span>
+                                <div class="match-bar">
+                                    <div class="match-fill" style="width: 85%;"></div>
+                                </div>
+                                <span class="match-percent">85%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="recommendation-card">
+                        <div class="recommendation-header">
+                            <h3>Data Science Meetup</h3>
+                            <div class="recommendation-actions">
+                                <button class="like-button" data-id="rec3">
+                                    <i class="fas fa-thumbs-up"></i>
+                                </button>
+                                <button class="skip-button" data-id="rec3">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                                <button class="chat-button" data-id="rec3">
+                                    <i class="fas fa-comment"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="recommendation-body">
+                            <p class="recommendation-desc">Monthly meetup for data science enthusiasts. Network with professionals and learn about the latest trends.</p>
+                            <div class="recommendation-meta">
+                                <div class="meta-item">
+                                    <i class="fas fa-calendar"></i>
+                                    <span>Last Thursday of each month</span>
+                                </div>
+                                <div class="meta-item">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <span>Innovation Hub</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="recommendation-footer">
+                            <div class="match-score">
+                                <span class="match-label">Match Score:</span>
+                                <div class="match-bar">
+                                    <div class="match-fill" style="width: 78%;"></div>
+                                </div>
+                                <span class="match-percent">78%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat tab content -->
+            <div class="tab-content" id="chat-tab">
+                <div class="chat-container">
+                    <div class="chat-header">
+                        <div class="profile-info">
+                            <img src="https://ui-avatars.com/api/?name=Event+Buddy&background=5856D6&color=fff" alt="EventBuddy" class="avatar">
+                            <div class="name-status">
+                                <h3>EventBuddy</h3>
+                                <p class="status">Active now</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chat-messages" id="chat-messages">
+                        <!-- Messages will be added here by JavaScript -->
+                        <div class="message-row">
+                            <div class="message agent-message">
+                                Hey there! 👋 I'm EventBuddy! I've analyzed your profile and found some tech events that match your interests. Loading your personalized recommendation...
+                            </div>
+                            <div class="time agent-time">Just now</div>
+                        </div>
+                    </div>
+
+                    <div class="message-input">
+                        <div class="input-wrapper">
+                            <input type="text" id="message-input" placeholder="Message EventBuddy..." autofocus>
+                            <button id="send-button">
+                                <i class="fas fa-arrow-up"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Feedback tab content -->
+            <div class="tab-content" id="feedback-tab">
+                <div class="tab-header">
+                    <h2>Feedback & Profile Evolution</h2>
+                    <p>See how your profile updates based on your feedback</p>
+                </div>
+
+                <div class="feedback-visualization">
+                    <div class="feedback-history">
+                        <h3>Recent Feedback</h3>
+                        <div class="feedback-items">
+                            <div class="feedback-item liked">
+                                <div class="feedback-item-header">
+                                    <span class="feedback-title">AI for Good Hackathon</span>
+                                    <span class="feedback-type">Liked</span>
+                                </div>
+                                <div class="feedback-date">Today</div>
+                            </div>
+                            <div class="feedback-item skipped">
+                                <div class="feedback-item-header">
+                                    <span class="feedback-title">Web Development Conference</span>
+                                    <span class="feedback-type">Skipped</span>
+                                </div>
+                                <div class="feedback-date">Yesterday</div>
+                            </div>
+                            <div class="feedback-item liked">
+                                <div class="feedback-item-header">
+                                    <span class="feedback-title">Machine Learning Workshop</span>
+                                    <span class="feedback-type">Liked</span>
+                                </div>
+                                <div class="feedback-date">3 days ago</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rocchio-visualization">
+                        <h3>Rocchio Algorithm Visualization</h3>
+                        <div class="rocchio-diagram">
+                            <div class="original-embedding">
+                                <div class="embedding-point" id="original-point"></div>
+                                <div class="embedding-label">Original Profile</div>
+                            </div>
+                            <div class="current-embedding">
+                                <div class="embedding-point" id="current-point"></div>
+                                <div class="embedding-label">Current Profile</div>
+                            </div>
+                            <div class="liked-embeddings">
+                                <div class="embedding-point liked-point"></div>
+                                <div class="embedding-point liked-point"></div>
+                                <div class="embedding-label">Liked Items</div>
+                            </div>
+                            <div class="disliked-embeddings">
+                                <div class="embedding-point disliked-point"></div>
+                                <div class="embedding-label">Disliked Items</div>
+                            </div>
+                        </div>
+                        <div class="rocchio-formula">
+                            <p>q<sub>m</sub> = α·q<sub>0</sub> + β·(1/|D<sub>r</sub>|)·∑d<sub>j</sub>∈D<sub>r</sub> d<sub>j</sub> - γ·(1/|D<sub>nr</sub>|)·∑d<sub>k</sub>∈D<sub>nr</sub> d<sub>k</sub></p>
+                        </div>
+                    </div>
+
+                    <div class="profile-evolution">
+                        <h3>Profile Evolution</h3>
+                        <div class="evolution-graph">
+                            <div class="graph-labels">
+                                <div class="y-label">Interest Score</div>
+                                <div class="x-label">Time</div>
+                            </div>
+                            <div class="graph-lines">
+                                <div class="graph-line" style="--percentage: 30%; --color: #4CAF50;">
+                                    <span class="line-label">AI</span>
+                                </div>
+                                <div class="graph-line" style="--percentage: 50%; --color: #2196F3;">
+                                    <span class="line-label">Machine Learning</span>
+                                </div>
+                                <div class="graph-line" style="--percentage: 20%; --color: #FF9800;">
+                                    <span class="line-label">Web Development</span>
+                                </div>
+                                <div class="graph-line" style="--percentage: 60%; --color: #9C27B0;">
+                                    <span class="line-label">Data Science</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings/Config modal -->
+    <div class="settings-button" id="settings-button">
+        <i class="fas fa-cog"></i>
+    </div>
+
+    <div class="modal" id="settings-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Simulator Settings</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <h3>API Configuration</h3>
+                <div class="form-group">
+                    <label for="user-id">User ID:</label>
+                    <input type="text" id="user-id" value="test_user_123">
+                </div>
+                <div class="form-group">
+                    <label for="api-url">Chat API Endpoint:</label>
+                    <input type="text" id="api-url" value="http://localhost:5050/api/conversation">
+                </div>
+
+                <h3>Recommendation Settings</h3>
+                <div class="form-group">
+                    <label for="rec-count">Number of Recommendations:</label>
+                    <input type="number" id="rec-count" value="3" min="1" max="10">
+                </div>
+
+                <h3>Current Opportunity Context</h3>
+                <div class="form-group">
+                    <label for="item-id">Item ID:</label>
+                    <input type="text" id="item-id" value="opportunity_456">
+                </div>
+                <div class="form-group">
+                    <label for="opportunity-title">Title:</label>
+                    <input type="text" id="opportunity-title" value="AI for Good Hackathon">
+                </div>
+                <div class="form-group">
+                    <label for="opportunity-desc">Description:</label>
+                    <textarea id="opportunity-desc">Join us for an exciting weekend of AI development focused on solving social impact challenges. Perfect for beginners and experts alike!</textarea>
+                </div>
+                <div class="form-group">
+                    <label for="opportunity-date">Date:</label>
+                    <input type="text" id="opportunity-date" value="June 15-16, 2025">
+                </div>
+                <div class="form-group">
+                    <label for="opportunity-location">Location:</label>
+                    <input type="text" id="opportunity-location" value="Tech Hub Downtown">
+                </div>
+
+                <div class="form-group">
+                    <button id="save-settings">Save Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/chat.js"></script>
+</body>
+</html>

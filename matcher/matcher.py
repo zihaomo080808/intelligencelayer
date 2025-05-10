@@ -8,6 +8,9 @@ from dateutil.parser import parse as parse_date
 from pathlib import Path
 from .vector_store import search, build_faiss_index
 from config import settings
+from sqlalchemy import select
+from database.models import UserRecommendation
+from database.session import AsyncSessionLocal
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -21,7 +24,10 @@ with open("data/us_cities_by_state.json") as f:
     CITIES_BY_STATE = json.load(f)
 
 # Ensure data directory exists
-os.makedirs(os.path.dirname(settings.VECTOR_INDEX_PATH), exist_ok=True)
+# Override the settings to use a local path
+local_vector_path = "./data/vector_index"
+logger.warning(f"Using local vector path: {local_vector_path} instead of {settings.VECTOR_INDEX_PATH}")
+os.makedirs(os.path.dirname(local_vector_path), exist_ok=True)
 
 # Check if embeddings need to be processed for the opportunities
 logger.info("Checking if opportunities have embeddings...")
@@ -196,3 +202,90 @@ def match_items(
     final_results = [opp for opp, _ in results[:top_k]]
     logger.info(f"Found {event_count} events, returning {len(final_results)} final results")
     return final_results
+
+
+async def match_items_with_history(
+    user_id: str,
+    user_embedding,
+    stances,
+    top_k=5,
+    only_type: str = None,
+    max_cost: float = None,
+    location_scope: str = "noevent",
+    states: list[str] = None,
+    cities: list[str] = None,
+    center: tuple[float, float] = None,
+    radius_miles: float = None,
+    deadline_before: date = None
+):
+    """
+    Returns up to `top_k` opportunities that the user has not seen before.
+    Filters recommendations based on user history and saves new recommendations.
+    """
+    # Request more items than needed to account for filtering
+    multiplier = 3
+    logger.info(f"Requesting {top_k * multiplier} items to find {top_k} unseen recommendations")
+
+    # Get regular matches without history filtering
+    potential_matches = match_items(
+        user_embedding=user_embedding,
+        stances=stances,
+        top_k=top_k * multiplier,  # Request more to allow for filtering
+        only_type=only_type,
+        max_cost=max_cost,
+        location_scope=location_scope,
+        states=states,
+        cities=cities,
+        center=center,
+        radius_miles=radius_miles,
+        deadline_before=deadline_before
+    )
+
+    # Extract opportunity IDs
+    potential_item_ids = [opp.get("id") for opp in potential_matches]
+    logger.info(f"Found {len(potential_item_ids)} potential matches")
+
+    # Query database for previously shown recommendations
+    async with AsyncSessionLocal() as session:
+        query = select(UserRecommendation.item_id).where(
+            UserRecommendation.user_id == user_id,
+            UserRecommendation.item_id.in_(potential_item_ids)
+        )
+        result = await session.execute(query)
+        shown_item_ids = set(result.scalars().all())
+
+    logger.info(f"User has previously seen {len(shown_item_ids)} of the potential matches")
+
+    # Filter out previously shown items
+    fresh_recommendations = []
+    for opp in potential_matches:
+        opp_id = opp.get("id")
+        if opp_id not in shown_item_ids:
+            fresh_recommendations.append(opp)
+
+        # Break once we have enough recommendations
+        if len(fresh_recommendations) >= top_k:
+            break
+
+    logger.info(f"Found {len(fresh_recommendations)} fresh recommendations")
+
+    # If we don't have enough recommendations, we could potentially add logic here
+    # to fallback to previously shown items with lowest show count or oldest timestamp
+
+    # Record these recommendations in the database
+    async with AsyncSessionLocal() as session:
+        for opp in fresh_recommendations:
+            # Get match score if available (may need to be calculated or passed in)
+            match_score = None  # Would need actual score calculation
+
+            new_recommendation = UserRecommendation(
+                user_id=user_id,
+                item_id=opp.get("id"),
+                recommended_score=match_score,
+                status="shown"
+            )
+            session.add(new_recommendation)
+
+        await session.commit()
+
+    return fresh_recommendations

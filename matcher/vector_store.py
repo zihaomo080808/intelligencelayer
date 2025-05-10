@@ -50,14 +50,15 @@ def build_faiss_index(embeddings, ids):
         idx.add(mat)
         
         # Save index and IDs
-        logger.info(f"Creating directory {os.path.dirname(settings.VECTOR_INDEX_PATH)}")
-        os.makedirs(os.path.dirname(settings.VECTOR_INDEX_PATH), exist_ok=True)
-        
-        logger.info(f"Saving FAISS index to {settings.VECTOR_INDEX_PATH}")
-        faiss.write_index(idx, settings.VECTOR_INDEX_PATH)
-        
-        logger.info(f"Saving IDs to {settings.VECTOR_INDEX_PATH}.ids.npy")
-        np.save(settings.VECTOR_INDEX_PATH + ".ids.npy", np.array(processed_ids))
+        local_vector_path = "./data/vector_index"
+        logger.info(f"Creating directory {os.path.dirname(local_vector_path)}")
+        os.makedirs(os.path.dirname(local_vector_path), exist_ok=True)
+
+        logger.info(f"Saving FAISS index to {local_vector_path}")
+        faiss.write_index(idx, local_vector_path)
+
+        logger.info(f"Saving IDs to {local_vector_path}.ids.npy")
+        np.save(local_vector_path + ".ids.npy", np.array(processed_ids))
         logger.info("Index and IDs saved successfully")
         
         return idx, processed_ids
@@ -67,7 +68,10 @@ def build_faiss_index(embeddings, ids):
 
 def load_index():
     """Load FAISS index and IDs, or build them if they don't exist."""
-    index_path = os.path.expanduser(settings.VECTOR_INDEX_PATH)
+    # Use local path instead of settings
+    local_vector_path = "./data/vector_index"
+    logger.warning(f"Using local vector path: {local_vector_path} instead of {settings.VECTOR_INDEX_PATH}")
+    index_path = os.path.expanduser(local_vector_path)
     ids_path = index_path + ".ids.npy"
     
     # Check if index files exist

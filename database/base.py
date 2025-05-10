@@ -37,13 +37,27 @@ Base = declarative_base()
 
 async def init_db():
     """Initialize database tables."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Attempt database initialization even in DEBUG mode
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy import text
-    
-    # First, create pgvector extension if it doesn't exist
-    async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-    
-    # Then create all tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+
+    try:
+        # First, create pgvector extension if it doesn't exist
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+
+        # Then create all tables
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        logger.info("Database tables initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing database tables: {str(e)}")
+        if settings.DEBUG:
+            logger.warning("DEBUG mode enabled, continuing despite database initialization error")
+        else:
+            # In production, re-raise the exception
+            raise

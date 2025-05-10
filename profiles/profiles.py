@@ -1,34 +1,36 @@
 # profiles/profiles.py
-from typing import Optional, List, Dict, Any
-from datetime import datetime
+# Standard library imports
+import json
 import logging
 import traceback
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, List, Dict, Any
+
+# Third-party imports
 import numpy as np
+from fastapi import APIRouter, Depends, HTTPException
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
-
-from sqlalchemy import Column, String, DateTime, text
-from sqlalchemy.dialects.postgresql import ARRAY, JSON
+from sqlalchemy import text, select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy import update
 
-from pgvector.sqlalchemy import Vector
-
+# Local application imports
 from database import Base, AsyncSessionLocal
 from database.base import engine
-from config import settings  # in case you need it elsewhere
+from database.models import UserProfile, UserFeedback, UserItemInteraction
 from database.session import get_db
-from fastapi import APIRouter, Depends, HTTPException
-
-import json
-from pathlib import Path
+from config import settings
+from feedback.rocchio import RocchioUpdater
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client
 client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+# Initialize Rocchio updater
+rocchio_updater = RocchioUpdater()
 
 # Pydantic models for request/response
 class ProfileBase(BaseModel):
@@ -46,17 +48,6 @@ class ProfileResponse(ProfileBase):
 
     class Config:
         from_attributes = True
-
-class UserProfile(Base):
-    """User profile model with vector embeddings for stance matching."""
-    __tablename__ = "profiles"
-
-    user_id = Column(String, primary_key=True, index=True)
-    bio = Column(String, nullable=True)
-    location = Column(String, nullable=True)
-    stances = Column(JSON, default={})
-    embedding = Column(Vector(1536), nullable=True)  # Dimension based on OpenAI's embedding size
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # Initialize FastAPI router
 router = APIRouter()
@@ -183,11 +174,11 @@ async def _update_profile(
             logger.info(f"Generated embedding for new user {user_id}")
         
         new_profile = UserProfile(
-            user_id=user_id,
-            bio=bio,
-            location=location,
+                user_id=user_id, 
+                bio=bio, 
+                location=location,
             stances=stances if stances is not None else {},
-            embedding=embedding
+                embedding=embedding
         )
         db.add(new_profile)
         await db.commit()
@@ -375,3 +366,152 @@ async def find_matching_opportunities(
         logger.error(f"Error in find_matching_opportunities: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error finding matches: {str(e)}")
+
+async def record_feedback(
+    db: AsyncSession,
+    user_id: str,
+    item_id: str,
+    feedback_type: str,
+    item_embedding: List[float] = None
+) -> None:
+    """
+    Record user feedback for an item.
+
+    Args:
+        db: Database session
+        user_id: User ID
+        item_id: Item ID
+        feedback_type: Type of feedback ('like' or 'skip')
+        item_embedding: Optional item embedding
+    """
+    try:
+        # Ensure the embedding is properly formatted for storage as ARRAY(Float)
+        if item_embedding:
+            # Make sure it's a list (not a numpy array or other format)
+            if isinstance(item_embedding, np.ndarray):
+                item_embedding = item_embedding.tolist()
+            elif not isinstance(item_embedding, list):
+                item_embedding = list(item_embedding)
+
+        # Record the feedback
+        feedback = UserFeedback(
+            user_id=user_id,
+            item_id=item_id,
+            feedback_type=feedback_type,
+            timestamp=datetime.utcnow(),
+            item_embedding=item_embedding
+        )
+        db.add(feedback)
+
+        # Record the interaction
+        interaction = UserItemInteraction(
+            user_id=user_id,
+            item_id=item_id,
+            interaction_type=feedback_type,
+            timestamp=datetime.utcnow()
+        )
+        db.add(interaction)
+
+        await db.commit()
+
+        # Update user embedding using Rocchio
+        await update_user_embedding(db, user_id)
+
+    except Exception as e:
+        logger.error(f"Error recording feedback: {str(e)}")
+        await db.rollback()
+        raise
+
+async def update_user_embedding(db: AsyncSession, user_id: str) -> None:
+    """
+    Update user embedding based on their feedback history using Rocchio algorithm.
+    
+    Args:
+        db: Database session
+        user_id: User ID
+    """
+    try:
+        # Get user profile
+        profile = await get_profile(user_id, db)
+        if not profile:
+            return
+
+        # Check for embedding
+        if profile.embedding is None:
+            return
+
+        # Check if embedding is empty (for arrays, this check is different)
+        if isinstance(profile.embedding, np.ndarray) and profile.embedding.size == 0:
+            return
+        elif isinstance(profile.embedding, list) and len(profile.embedding) == 0:
+            return
+            
+        # Get recent feedback
+        stmt = select(UserFeedback).where(
+            UserFeedback.user_id == user_id
+        ).order_by(UserFeedback.timestamp.desc()).limit(100)
+        
+        feedbacks = (await db.execute(stmt)).scalars().all()
+        
+        # Ensure profile embedding is in the right format for Rocchio
+        if isinstance(profile.embedding, np.ndarray):
+            profile_embedding = profile.embedding.tolist()
+        else:
+            profile_embedding = list(profile.embedding)
+
+        # Separate liked and skipped items
+        liked_embeddings = []
+        skipped_embeddings = []
+
+        for f in feedbacks:
+            # For 'like' feedback
+            if f.feedback_type == 'like' and f.item_embedding is not None:
+                # Ensure we have a list, not a numpy array or string
+                if isinstance(f.item_embedding, np.ndarray):
+                    liked_embeddings.append(f.item_embedding.tolist())
+                elif isinstance(f.item_embedding, list):
+                    liked_embeddings.append(f.item_embedding)
+                elif hasattr(f.item_embedding, 'tolist'):
+                    liked_embeddings.append(f.item_embedding.tolist())
+                else:
+                    # Skip if not in a usable format
+                    logger.warning(f"Skipping like item with embedding type {type(f.item_embedding)}")
+
+            # For 'skip' feedback
+            elif f.feedback_type == 'skip' and f.item_embedding is not None:
+                # Ensure we have a list, not a numpy array or string
+                if isinstance(f.item_embedding, np.ndarray):
+                    skipped_embeddings.append(f.item_embedding.tolist())
+                elif isinstance(f.item_embedding, list):
+                    skipped_embeddings.append(f.item_embedding)
+                elif hasattr(f.item_embedding, 'tolist'):
+                    skipped_embeddings.append(f.item_embedding.tolist())
+                else:
+                    # Skip if not in a usable format
+                    logger.warning(f"Skipping skip item with embedding type {type(f.item_embedding)}")
+        
+        # Update embedding using Rocchio
+        new_embedding = rocchio_updater.update_embedding(
+            profile_embedding,
+            liked_embeddings,
+            skipped_embeddings
+        )
+        
+        # Update profile with the new embedding
+        # Make sure it's compatible with the Vector column type in the database
+        try:
+            # Store the embedding in the format expected by the Vector column
+            # For Vector type, we need to maintain numpy array format
+            profile.embedding = np.array(new_embedding)
+
+            logger.info(f"Updated embedding for user {user_id} using Rocchio algorithm")
+            await db.commit()
+        except Exception as e:
+            logger.error(f"Error storing updated embedding: {str(e)}")
+            await db.rollback()
+            raise
+        
+    except Exception as e:
+        logger.error(f"Error updating user embedding: {str(e)}")
+        await db.rollback()
+        raise
