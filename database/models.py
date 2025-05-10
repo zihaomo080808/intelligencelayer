@@ -13,6 +13,24 @@ from sqlalchemy.dialects.postgresql import JSON
 from pgvector.sqlalchemy import Vector
 from datetime import datetime
 
+class Opportunity(Base):
+    """Model for storing opportunity data."""
+    __tablename__ = "opportunities"
+
+    id = Column(String, primary_key=True)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    type = Column(String, nullable=True)
+    cost = Column(Float, nullable=True)
+    deadline = Column(DateTime, nullable=True)
+    state = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    embedding = Column(Vector(1536), nullable=True)  # Dimension based on OpenAI's embedding size
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class UserProfile(Base):
     """User profile model with vector embeddings for stance matching."""
     __tablename__ = "profiles"
@@ -75,5 +93,6 @@ __all__ = [
     "UserFeedback",
     "UserItemInteraction",
     "UserConversation",
-    "UserRecommendation"
+    "UserRecommendation",
+    "Opportunity"
 ]

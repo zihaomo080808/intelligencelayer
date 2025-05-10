@@ -8,8 +8,8 @@ from dateutil.parser import parse as parse_date
 from pathlib import Path
 from .vector_store import search, build_faiss_index
 from config import settings
-from sqlalchemy import select
-from database.models import UserRecommendation
+from sqlalchemy import select, func
+from database.models import UserRecommendation, Opportunity
 from database.session import AsyncSessionLocal
 
 # Configure logging
@@ -220,72 +220,101 @@ async def match_items_with_history(
 ):
     """
     Returns up to `top_k` opportunities that the user has not seen before.
-    Filters recommendations based on user history and saves new recommendations.
+    Uses an efficient single-query approach to get unseen items first.
     """
-    # Request more items than needed to account for filtering
-    multiplier = 3
-    logger.info(f"Requesting {top_k * multiplier} items to find {top_k} unseen recommendations")
-
-    # Get regular matches without history filtering
-    potential_matches = match_items(
-        user_embedding=user_embedding,
-        stances=stances,
-        top_k=top_k * multiplier,  # Request more to allow for filtering
-        only_type=only_type,
-        max_cost=max_cost,
-        location_scope=location_scope,
-        states=states,
-        cities=cities,
-        center=center,
-        radius_miles=radius_miles,
-        deadline_before=deadline_before
-    )
-
-    # Extract opportunity IDs
-    potential_item_ids = [opp.get("id") for opp in potential_matches]
-    logger.info(f"Found {len(potential_item_ids)} potential matches")
-
-    # Query database for previously shown recommendations
     async with AsyncSessionLocal() as session:
-        query = select(UserRecommendation.item_id).where(
-            UserRecommendation.user_id == user_id,
-            UserRecommendation.item_id.in_(potential_item_ids)
+        # First get all unseen items in a single query
+        unseen_query = select(Opportunity).where(
+            ~Opportunity.id.in_(
+                select(UserRecommendation.item_id).where(
+                    UserRecommendation.user_id == user_id
+                )
+            )
         )
-        result = await session.execute(query)
-        shown_item_ids = set(result.scalars().all())
-
-    logger.info(f"User has previously seen {len(shown_item_ids)} of the potential matches")
-
-    # Filter out previously shown items
-    fresh_recommendations = []
-    for opp in potential_matches:
-        opp_id = opp.get("id")
-        if opp_id not in shown_item_ids:
-            fresh_recommendations.append(opp)
-
-        # Break once we have enough recommendations
-        if len(fresh_recommendations) >= top_k:
-            break
-
-    logger.info(f"Found {len(fresh_recommendations)} fresh recommendations")
-
-    # If we don't have enough recommendations, we could potentially add logic here
-    # to fallback to previously shown items with lowest show count or oldest timestamp
-
-    # Record these recommendations in the database
-    async with AsyncSessionLocal() as session:
-        for opp in fresh_recommendations:
-            # Get match score if available (may need to be calculated or passed in)
-            match_score = None  # Would need actual score calculation
-
+        
+        # Apply filters directly in the query
+        if only_type:
+            unseen_query = unseen_query.where(Opportunity.type == only_type)
+        if max_cost is not None:
+            unseen_query = unseen_query.where(Opportunity.cost <= max_cost)
+        if deadline_before:
+            unseen_query = unseen_query.where(Opportunity.deadline >= deadline_before + timedelta(days=2))
+            
+        # Apply location filters
+        if location_scope != "noevent" and location_scope != "nationwide":
+            if location_scope == "states" and states:
+                unseen_query = unseen_query.where(
+                    (Opportunity.state.in_(states)) |
+                    (Opportunity.city.in_([city for state in states for city in CITIES_BY_STATE.get(state, [])]))
+                )
+            elif location_scope == "cities" and cities:
+                unseen_query = unseen_query.where(Opportunity.city.in_(cities))
+            elif location_scope == "radius" and center and radius_miles:
+                # For radius, we'll need to filter after getting the results
+                pass
+            elif location_scope == "International":
+                unseen_query = unseen_query.where(
+                    (Opportunity.state.is_(None)) & (Opportunity.city.is_(None))
+                )
+        
+        # Execute query
+        result = await session.execute(unseen_query)
+        unseen_items = result.scalars().all()
+        
+        if not unseen_items:
+            logger.warning("No unseen items available")
+            return []
+            
+        # Convert to list of dictionaries with embeddings
+        items_with_embeddings = []
+        for item in unseen_items:
+            if hasattr(item, 'embedding') and item.embedding:
+                # For radius filtering, check distance here
+                if location_scope == "radius" and center and radius_miles:
+                    if item.latitude is not None and item.longitude is not None:
+                        distance = haversine(center[0], center[1], item.latitude, item.longitude)
+                        if distance > radius_miles:
+                            continue
+                
+                items_with_embeddings.append({
+                    "id": item.id,
+                    "title": item.title,
+                    "description": item.description,
+                    "embedding": item.embedding,
+                    "type": item.type,
+                    "cost": item.cost,
+                    "deadline": item.deadline,
+                    "state": item.state,
+                    "city": item.city,
+                    "latitude": item.latitude,
+                    "longitude": item.longitude
+                })
+        
+        # Calculate scores for all items
+        scored_items = []
+        for item in items_with_embeddings:
+            score = calculate_match_score(user_embedding, item["embedding"], stances)
+            scored_items.append({
+                "id": item["id"],
+                "title": item["title"],
+                "description": item["description"],
+                "score": score
+            })
+        
+        # Sort by score and get top_k
+        scored_items.sort(key=lambda x: x["score"], reverse=True)
+        top_items = scored_items[:top_k]
+        
+        # Record these recommendations in the database
+        for item in top_items:
             new_recommendation = UserRecommendation(
                 user_id=user_id,
-                item_id=opp.get("id"),
-                recommended_score=match_score,
+                item_id=item["id"],
+                recommended_score=item["score"],
                 status="shown"
             )
             session.add(new_recommendation)
-
+        
         await session.commit()
-
-    return fresh_recommendations
+        
+        return top_items
