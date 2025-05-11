@@ -10,7 +10,11 @@ from openai import AsyncOpenAI
 from config import settings
 from database.models import UserConversation
 
-# Configure logging
+# Configure logging with more detailed format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client with detailed logging
@@ -45,22 +49,44 @@ PERSONALITY:
 - You are sharp and witty and right to the point
 
 IMPORTANT GUIDELINES:
-1. Keep responses concise (50-100 words max)
-2. Ask follow-up questions to understand user interests better
-3. If users show interest, express excitement and encourage them to sign up
-4. If users are unsure, offer more specific details about the opportunity
-5. Be honest about event requirements and commitments
-6. Don't use emojis in your responses
+1. Keep responses concise (20 words max)
+2. Don't use emojis in your responses
+3. You can use abbreviations for any parts of speech but do not use slang for nouns except for "shit/shi"
+4. prioritize having a conversation with the user, not giving a response. If the user does not specifically reference the opportunity, just have a conversation with them like a friend. Refer to the example response style for examples. (only proceed to guidelines 5-8 if user specifically references the opportunity)
+5. Ask follow-up questions sparingly to understand user interests better
+6. If users show interest, express excitement and encourage them to sign up
+7. If users are unsure, offer more specific details about the opportunity (between 3. and 4. judge which one is more urgent for user and tailor response to 3. or 4. do not do both, that will make response too wordy)
+8. Be honest about event requirements and commitments
 
 DO NOT:
 - Use outdated slang that would seem unnatural
+- Do not overuse slang, don't use vibe too much, dont use words like "cause" in the context of "what cause gets you hyped"
 - Be overly formal or robotic
 - Pressure users to attend events that don't match their interests
 - Make up information about events
+- Do not use the word "deet" in your response
+- use dashes in your response
+- Do not use the word "cap"
 
 Example response style:
-"DUDE this hackathon is perfect for u! It's this Saturday from 10am-6pm at Tech Hub downtown. u'll get to build AI projects with a team and win prizes, its super low-stakes, don't worry if you're newto coding or new to startups. Lmk if you're interested."
+"convo: hey! AI: Hey whatsup Person: I got your number from a business card, but yeah idk AI: Oh yeah just curious whatd it say bout me Person: oh that you were just someone that can help me with startups advice AI: oh yeah bet, so Im currently connected with YC founders around your area, also got some events. Mind me asking what stage youre on?"
+Example 2:
+"person 1
+ He'll yea
+ Who is this
+ I love them
+
+person 2
+ Benny
+
+person 3
+ Love benny. Omg, Tell him I love him. Dude. Interview coder is legit j a react app + an API, Bruh Like its not that deep. And the guy has not been coding since birth. He's been coding seriously since like 1-2 yrs ago. We fucking got it"
 """
+
+# Log the system prompt when the module is loaded
+logger.warning("=== SYSTEM PROMPT LOADED ===")
+logger.warning(SYSTEM_PROMPT)
+logger.warning("===========================")
 
 async def get_agent_response(
     conversation: UserConversation,
@@ -77,24 +103,23 @@ async def get_agent_response(
         str: The agent's response
     """
     try:
-        # Log OpenAI API key status but don't skip - always try to use the API
-        logger.warning(f"OPENAI_API_KEY set: {bool(settings.OPENAI_API_KEY)}")
-        logger.warning(f"OPENAI_API_KEY length: {len(settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else 0}")
-        logger.warning(f"OPENAI_API_KEY first 10 chars: {settings.OPENAI_API_KEY[:10] if settings.OPENAI_API_KEY else 'None'}")
-
-        # We'll attempt to use the API regardless of whether we think the key is set
-        # This will help ensure we're actually trying to connect to OpenAI
+        # Log the full request details
+        logger.warning("=== GENERATING AGENT RESPONSE ===")
+        logger.warning(f"Conversation ID: {conversation.id}")
+        logger.warning(f"User ID: {conversation.user_id}")
+        logger.warning(f"Item ID: {conversation.item_id}")
+        logger.warning(f"Message Count: {conversation.message_count}")
+        logger.warning(f"Transcript: {conversation.transcript}")
+        logger.warning(f"Opportunity Details: {json.dumps(opportunity_details, indent=2)}")
+        logger.warning("===============================")
 
         # Extract the conversation history
         messages = _extract_conversation_messages(conversation.transcript)
-
-        # Log conversation history for debugging
-        logger.info(f"Conversation transcript: {conversation.transcript}")
-        logger.info(f"Extracted {len(messages)} messages")
+        logger.warning(f"Extracted {len(messages)} messages from transcript")
 
         # Add the opportunity details to the context
         opportunity_context = _format_opportunity_context(opportunity_details)
-        logger.info(f"Opportunity context: {opportunity_context}")
+        logger.warning(f"Opportunity context: {opportunity_context}")
 
         # Build the prompt
         prompt_messages = [
@@ -105,69 +130,40 @@ async def get_agent_response(
         for msg in messages:
             prompt_messages.append(msg)
 
-        # Log prompt for debugging
-        logger.info(f"Using {len(prompt_messages)} messages in prompt")
+        # Log the full prompt being sent to OpenAI
+        logger.warning("=== FULL PROMPT BEING SENT TO OPENAI ===")
+        logger.warning(json.dumps(prompt_messages, indent=2))
+        logger.warning("=======================================")
 
-        # Generate the response (add extensive error logging)
+        # Generate the response
         try:
-            logger.warning(f"Attempting to call OpenAI API with {len(prompt_messages)} messages")
-            logger.warning(f"First message (first 100 chars): {prompt_messages[0]['content'][:100]}")
-
-            # Use the configured OpenAI model
             model_name = settings.GENERATOR_MODEL
             logger.warning(f"Using OpenAI model: {model_name}")
 
-            # Log the full client configuration
-            logger.warning(f"OpenAI client config: API key set: {bool(client.api_key)}, API key length: {len(client.api_key) if client.api_key else 0}")
-            logger.warning(f"OpenAI client timeout: {client.timeout}")
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=prompt_messages
+            )
+            
+            # Log the response
+            logger.warning("=== OPENAI RESPONSE ===")
+            logger.warning(str(response))
+            logger.warning("=====================")
 
-            # Add more detailed debug info
-            import traceback
-            try:
-                # Log the full request for debugging
-                logger.warning(f"Full request to OpenAI API:")
-                logger.warning(f"Model: {model_name}")
-                logger.warning(f"Messages: {json.dumps(prompt_messages, indent=2)}")
-                logger.warning(f"Max tokens: 200")
-                logger.warning(f"Temperature: 0.7")
+            agent_response = response.choices[0].message.content.strip()
+            logger.warning(f"Generated response: {agent_response}")
+            
+            return agent_response
 
-                # Minimal parameters for compatibility with o4-mini model
-                response = await client.chat.completions.create(
-                    model=model_name,
-                    messages=prompt_messages
-                )
-                logger.warning("OpenAI API call successful")
-                logger.warning(f"Response: {str(response)[:500]}")
-            except Exception as api_detail_err:
-                logger.error(f"OpenAI API detailed error: {str(api_detail_err)}")
-                logger.error(f"Error trace: {traceback.format_exc()}")
-                raise api_detail_err
         except Exception as api_err:
-            logger.error(f"OpenAI API error details: {str(api_err)}")
-            # Re-raise to be caught by the outer try/except
+            logger.error(f"OpenAI API error: {str(api_err)}")
             raise
-
-        # Extract and return the generated text (OpenAI response format)
-        agent_response = response.choices[0].message.content.strip()
-
-        # Log the interaction
-        logger.info(f"Generated agent response for conversation {conversation.id}")
-        logger.info(f"Response content: {agent_response}")
-
-        return agent_response
 
     except Exception as e:
         logger.error(f"Error generating agent response: {str(e)}")
         import traceback
         logger.error(f"Error traceback: {traceback.format_exc()}")
-
-        # Return a more helpful fallback response using opportunity details
-        try:
-            title = opportunity_details.get('title', 'this opportunity')
-            return f"I'd love to chat about {title}! What specific aspect are you most interested in learning about?"
-        except:
-            # If we can't even extract from opportunity_details, use a very generic response
-            return "I'd be happy to tell you more! What would you like to know about this opportunity?"
+        raise
 
 def _extract_conversation_messages(transcript: str) -> List[Dict[str, str]]:
     """
