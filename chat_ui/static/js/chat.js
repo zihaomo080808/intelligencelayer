@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatMessages = document.getElementById('chat-messages');
     const messageInput = document.getElementById('message-input');
     const sendButton = document.getElementById('send-button');
+    const recommendButton = document.getElementById('recommend-button');
     
     // DOM elements - Profile
     const profileBio = document.getElementById('profile-bio');
@@ -23,7 +24,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // DOM elements - Recommendations
     const likeButtons = document.querySelectorAll('.like-button');
     const skipButtons = document.querySelectorAll('.skip-button');
-    const chatButtons = document.querySelectorAll('.chat-button');
     
     // App configuration
     let appConfig = {
@@ -35,34 +35,33 @@ document.addEventListener('DOMContentLoaded', function() {
             description: document.getElementById('opportunity-desc').value,
             date: document.getElementById('opportunity-date').value,
             location: document.getElementById('opportunity-location').value
-        }
+        },
+        userOnboarded: false,
+        userProfile: {
+            name: "",
+            location: "",
+            education: "",
+            occupation: "",
+            current_projects: [],
+            interests: [],
+            skills: [],
+            goals: [],
+            bio: ""
+        },
+        onboardingStep: 0,
+        maxOnboardingAttempts: 3,  // Number of attempts before auto-completing
+        onboardingAttempts: 0,
+        useIntelligentOnboarding: true // Flag to use the new API-based onboarding
     };
     
     // Update displayed user ID
     displayedUserId.textContent = appConfig.userId;
-    
-    // Track if user has selected a recommendation to chat about
-    let hasSelectedRecommendation = false;
+
+    // Always allow direct chat access
+    let hasSelectedRecommendation = true;
 
     // Tab switching
     function switchTab(tabId) {
-        // If trying to access chat before selecting a recommendation, redirect to recommendations
-        if (tabId === 'chat' && !hasSelectedRecommendation) {
-            // Show a message instructing the user to select a recommendation first
-            const toast = document.createElement('div');
-            toast.className = 'toast-message';
-            toast.textContent = 'Please select a recommendation to chat about first!';
-            document.body.appendChild(toast);
-
-            // Remove the toast after a delay
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
-
-            // Switch to recommendations tab instead
-            tabId = 'recommendations';
-        }
-
         // Remove active class from all tabs and contents
         tabs.forEach(tab => tab.classList.remove('active'));
         tabContents.forEach(content => content.classList.remove('active'));
@@ -75,9 +74,27 @@ document.addEventListener('DOMContentLoaded', function() {
             selectedTab.classList.add('active');
             selectedContent.classList.add('active');
 
-            // If switching to chat tab, focus on message input
-            if (tabId === 'chat' && messageInput) {
-                setTimeout(() => messageInput.focus(), 100);
+            // If switching to chat tab
+            if (tabId === 'chat') {
+                // Check for saved profile first
+                const savedProfile = localStorage.getItem('userProfile');
+
+                if (savedProfile) {
+                    // If we have a saved profile, load it
+                    appConfig.userProfile = JSON.parse(savedProfile);
+                    appConfig.userOnboarded = true;
+                }
+
+                // Focus on message input regardless of onboarding status
+                if (messageInput) {
+                    setTimeout(() => messageInput.focus(), 100);
+                }
+
+                // Make sure the chat is blank if not onboarded and no messages yet
+                if (!appConfig.userOnboarded && chatMessages && chatMessages.children.length === 0) {
+                    // Ensure the chat is empty - don't add any starting messages
+                    chatMessages.innerHTML = '';
+                }
             }
         }
     }
@@ -322,15 +339,284 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Onboarding questions
+    const onboardingQuestions = [
+        "Hey there! 👋 I'm the onboarding assistant. What's your name?",
+        "Nice to meet you, {name}! Where are you located, where have you studied, and what are you currently doing?",
+        "What are your top interests and skills? (Feel free to list several)"
+    ];
+
+    // Handle onboarding process with intelligent API-based parsing
+    async function handleOnboarding(message) {
+        // Track attempts for fallback handling
+        appConfig.onboardingAttempts++;
+
+        // Show typing indicator while processing
+        showTypingIndicator();
+
+        try {
+            if (appConfig.useIntelligentOnboarding) {
+                // Use the intelligent onboarding API
+                const apiBaseUrl = window.location.origin;
+                const endpoint = `${apiBaseUrl}/api/onboarding/process`;
+
+                console.log(`Processing onboarding message using API (step ${appConfig.onboardingStep})`);
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        step: appConfig.onboardingStep,
+                        profile: appConfig.userProfile,
+                        user_id: appConfig.userId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log("Onboarding API response:", data);
+
+                // Update user profile with extracted information
+                if (data.profile) {
+                    appConfig.userProfile = data.profile;
+                }
+
+                // Hide typing indicator
+                hideTypingIndicator();
+
+                // Move to next step
+                appConfig.onboardingStep++;
+                appConfig.onboardingAttempts = 0; // Reset attempts
+
+                // Add the next question or complete onboarding
+                if (data.complete) {
+                    completeOnboarding();
+                } else if (data.next_question) {
+                    addMessage(data.next_question);
+                } else {
+                    // Fallback if no next question is provided
+                    if (appConfig.onboardingStep <= onboardingQuestions.length) {
+                        const nextQuestion = onboardingQuestions[appConfig.onboardingStep];
+                        addMessage(nextQuestion.replace('{name}', appConfig.userProfile.name || 'there'));
+                    } else {
+                        completeOnboarding();
+                    }
+                }
+
+            } else {
+                // Fallback to the original simple onboarding logic
+                hideTypingIndicator();
+
+                // Check if we need to auto-complete onboarding due to too many invalid attempts
+                if (appConfig.onboardingAttempts > appConfig.maxOnboardingAttempts) {
+                    completeOnboarding();
+                    return;
+                }
+
+                switch(appConfig.onboardingStep) {
+                    case 0:
+                        // First message, store name
+                        if (message.length < 2) {
+                            // Handle invalid name
+                            addMessage("I didn't quite catch that. Could you share your name again?");
+                        } else {
+                            appConfig.userProfile.name = message;
+                            appConfig.onboardingStep++;
+                            appConfig.onboardingAttempts = 0; // Reset attempts counter
+                            addMessage(onboardingQuestions[1].replace('{name}', message));
+                        }
+                        break;
+
+                    case 1:
+                        // Second message, store location
+                        if (message.length < 2) {
+                            // Handle invalid location
+                            addMessage("I'm not sure I got that. Could you tell me where you're located?");
+                        } else {
+                            appConfig.userProfile.location = message;
+                            appConfig.onboardingStep++;
+                            appConfig.onboardingAttempts = 0; // Reset attempts counter
+                            addMessage(onboardingQuestions[2]);
+                        }
+                        break;
+
+                    case 2:
+                        // Third message, store interests
+                        if (message.length < 2) {
+                            // Use default interests if the user doesn't provide any
+                            appConfig.userProfile.interests = ["technology", "events", "networking"];
+                        } else {
+                            appConfig.userProfile.interests = message.split(',').map(i => i.trim());
+                        }
+
+                        // Complete onboarding regardless of response quality
+                        completeOnboarding();
+                        break;
+                }
+            }
+        } catch (error) {
+            console.error("Error in onboarding process:", error);
+
+            // Hide typing indicator
+            hideTypingIndicator();
+
+            // Fall back to simple processing if API fails
+            appConfig.useIntelligentOnboarding = false;
+
+            // Use a simple approach for this message
+            if (appConfig.onboardingStep === 0) {
+                // Just extract the first word as a name
+                const nameParts = message.split(' ');
+                appConfig.userProfile.name = nameParts[0];
+                appConfig.onboardingStep++;
+                addMessage(onboardingQuestions[1].replace('{name}', nameParts[0]));
+            } else if (appConfig.onboardingStep === 1) {
+                // Just store the full text as location
+                appConfig.userProfile.location = message;
+                appConfig.userProfile.bio = message;
+                appConfig.onboardingStep++;
+                addMessage(onboardingQuestions[2]);
+            } else {
+                // Just store interests as is
+                appConfig.userProfile.interests = message.split(',').map(i => i.trim());
+                completeOnboarding();
+            }
+        }
+    }
+
+    // Function to complete onboarding and transition to normal chat
+    function completeOnboarding() {
+        // If we have some valid data, update fields
+        if (appConfig.userProfile.name) {
+            // Save to localStorage if desired
+            localStorage.setItem('userProfile', JSON.stringify(appConfig.userProfile));
+
+            // Welcome message with personalization
+            addMessage(`Thanks ${appConfig.userProfile.name}! I've got your profile set up. Alex Hefle will join the conversation once you send your next message.`);
+
+            // Update profile UI elements with expanded profile data
+            updateProfileUIFromOnboarding();
+        } else {
+            // Complete fallback if we have no valid data at all
+            appConfig.userProfile.name = "User";
+            addMessage("Great! Your profile is set up. Alex Hefle will join the conversation once you send your next message.");
+        }
+
+        // IMPORTANT: Only set the onboarded flag AFTER the final onboarding message is shown
+        // This ensures the conversation bot doesn't activate until after this message
+        appConfig.userOnboarded = true;
+    }
+
+    // Function to update profile UI with extracted information
+    function updateProfileUIFromOnboarding() {
+        // Update bio with combined information
+        if (profileBio) {
+            let bioComponents = [];
+
+            if (appConfig.userProfile.name) {
+                bioComponents.push(`I'm ${appConfig.userProfile.name}`);
+            }
+
+            if (appConfig.userProfile.location) {
+                bioComponents.push(`from ${appConfig.userProfile.location}`);
+            }
+
+            if (appConfig.userProfile.education) {
+                bioComponents.push(`educated at ${appConfig.userProfile.education}`);
+            }
+
+            if (appConfig.userProfile.occupation) {
+                bioComponents.push(`working as ${appConfig.userProfile.occupation}`);
+            }
+
+            // If we have a bio already, use it instead
+            if (appConfig.userProfile.bio && appConfig.userProfile.bio.length > 20) {
+                profileBio.value = appConfig.userProfile.bio;
+            } else if (bioComponents.length > 0) {
+                profileBio.value = bioComponents.join(', ');
+            }
+        }
+
+        // Update location
+        if (profileLocation && appConfig.userProfile.location) {
+            profileLocation.value = appConfig.userProfile.location;
+        }
+
+        // Add all interests and skills
+        const tagsToAdd = [];
+
+        // Add interests
+        if (appConfig.userProfile.interests && appConfig.userProfile.interests.length > 0) {
+            appConfig.userProfile.interests.forEach(interest => {
+                if (interest && interest.length > 1) tagsToAdd.push(interest);
+            });
+        }
+
+        // Add skills
+        if (appConfig.userProfile.skills && appConfig.userProfile.skills.length > 0) {
+            appConfig.userProfile.skills.forEach(skill => {
+                if (skill && skill.length > 1 && !tagsToAdd.includes(skill)) tagsToAdd.push(skill);
+            });
+        }
+
+        // Clear existing tags first
+        const interestTags = document.querySelector('.interest-tags');
+        if (interestTags) {
+            // Remove all tags except the input
+            Array.from(interestTags.querySelectorAll('.interest-tag')).forEach(tag => {
+                tag.remove();
+            });
+
+            // Add the new tags
+            tagsToAdd.forEach(tag => {
+                addInterestTag(tag);
+            });
+        }
+    }
+
+    // Function to start onboarding
+    function startOnboarding() {
+        if (!appConfig.userOnboarded && chatMessages) {
+            // Clear any existing messages
+            chatMessages.innerHTML = '';
+
+            // Add first onboarding message
+            addMessage(onboardingQuestions[0]);
+        }
+    }
+
     // Handle send button click
     function handleSend() {
         if (!messageInput) return;
-        
+
         const message = messageInput.value.trim();
         if (message) {
+            // Add the user's message to the chat
             addMessage(message, true);
             messageInput.value = '';
-            sendMessage(message);
+
+            // Check if the user is still in onboarding process or already onboarded
+            if (!appConfig.userOnboarded) {
+                // Check if this is the very first message in the chat
+                if (chatMessages.children.length === 1) { // Only the user's message is there
+                    // Now show the first onboarding question
+                    addMessage(onboardingQuestions[0]);
+                    // Don't process their first message as an answer yet
+                    // We'll wait for their response to the first question
+                } else if (chatMessages.children.length >= 3) {
+                    // This is a response to our onboarding question, so process it
+                    handleOnboarding(message);
+                }
+            } else {
+                // Normal message flow - user is already onboarded
+                sendMessage(message);
+            }
         }
     }
     
@@ -399,15 +685,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Handle recommendation actions
     function handleRecommendationAction(action, id) {
         const card = document.querySelector(`.recommendation-card [data-id="${id}"]`).closest('.recommendation-card');
-        
-        switch(action) {
+        if (!card) return;
+
+        switch (action) {
             case 'like':
                 // Visual feedback
                 card.style.borderColor = '#4CAF50';
                 setTimeout(() => {
                     card.style.borderColor = '';
                 }, 1000);
-                
+
                 // Add to feedback history
                 const feedbackItems = document.querySelector('.feedback-items');
                 if (feedbackItems) {
@@ -423,7 +710,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     `;
                     feedbackItems.prepend(feedbackItem);
                 }
-                
+
                 // Update Rocchio visualization
                 const currentPoint = document.getElementById('current-point');
                 if (currentPoint) {
@@ -431,14 +718,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     currentPoint.style.top = '25%';
                 }
                 break;
-                
+
             case 'skip':
                 // Visual feedback
                 card.style.borderColor = '#f44336';
                 setTimeout(() => {
                     card.style.borderColor = '';
                 }, 1000);
-                
+
                 // Add to feedback history
                 const skipItems = document.querySelector('.feedback-items');
                 if (skipItems) {
@@ -454,57 +741,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     `;
                     skipItems.prepend(feedbackItem);
                 }
-                
+
                 // Update Rocchio visualization
                 const skipPoint = document.getElementById('current-point');
                 if (skipPoint) {
                     skipPoint.style.left = '40%';
                     skipPoint.style.top = '40%';
                 }
-                break;
-                
-            case 'chat':
-                // Set flag indicating user has selected a recommendation
-                hasSelectedRecommendation = true;
-
-                // Switch to chat tab and populate title in chat
-                switchTab('chat');
-
-                // Extract opportunity details
-                const title = card.querySelector('h3').textContent;
-                const desc = card.querySelector('.recommendation-desc').textContent;
-
-                // Extract additional metadata if available
-                let date = '';
-                let location = '';
-                try {
-                    date = card.querySelector('.meta-item:first-child span').textContent;
-                    location = card.querySelector('.meta-item:last-child span').textContent;
-                } catch (e) {
-                    console.warn('Could not extract metadata from card', e);
-                }
-
-                // Update app config with current opportunity
-                appConfig.itemId = id;
-                appConfig.opportunity.title = title;
-                appConfig.opportunity.description = desc;
-                if (date) appConfig.opportunity.date = date;
-                if (location) appConfig.opportunity.location = location;
-
-                // Clear any existing messages and add a welcome message about this opportunity
-                chatMessages.innerHTML = '';
-                
-                // Use casual style matching generator.py
-                const casualGreetings = [
-                    `Yo, so you're into ${title}? Nice choice!`,
-                    `Look at you checking out ${title}! What do you wanna know?`,
-                    `${title} is fire! What's up?`,
-                    `Totally digging your interest in ${title}! Questions?`
-                ];
-                
-                // Choose a random greeting
-                addMessage(casualGreetings[Math.floor(Math.random() * casualGreetings.length)]);
-
                 break;
         }
     }
@@ -550,19 +793,158 @@ document.addEventListener('DOMContentLoaded', function() {
         closeSettingsModal();
     }
     
+    // Function to fetch and display a recommendation
+    async function fetchAndDisplayRecommendation() {
+        if (!chatMessages) return;
+
+        // Show loading state
+        addMessage("Generating opportunity recommendation for you...");
+
+        // Disable the recommend button during fetch
+        if (recommendButton) {
+            recommendButton.disabled = true;
+            recommendButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+        }
+
+        try {
+            // Show typing indicator
+            showTypingIndicator();
+
+            // Prepare the API request
+            const apiBaseUrl = window.location.origin;
+            const endpoint = `${apiBaseUrl}/api/recommend`;
+
+            console.log("Requesting recommendation from:", endpoint);
+
+            // Make the API call
+            try {
+                const requestOptions = {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: appConfig.userId
+                    })
+                };
+
+                const response = await fetch(endpoint, requestOptions);
+                console.log("Response status:", response.status);
+
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+
+                // Parse the response
+                const data = await response.json();
+                console.log("API response:", data);
+
+                // Hide typing indicator
+                hideTypingIndicator();
+
+                // Extract recommendation content
+                let recommendation = "";
+
+                if (data && data.recommendations) {
+                    recommendation = data.recommendations;
+                } else if (data && data.response) {
+                    recommendation = data.response;
+                } else {
+                    throw new Error("Invalid response format");
+                }
+
+                // Add the recommendation to the chat
+                addMessage(recommendation);
+
+                // Set hasSelectedRecommendation to true to allow chatting
+                hasSelectedRecommendation = true;
+
+            } catch (apiError) {
+                console.error("API call failed:", apiError);
+                hideTypingIndicator();
+
+                // Fallback to direct generator.py call if possible
+                try {
+                    const generatorEndpoint = `${apiBaseUrl}/api/generate`;
+                    console.log("Trying fallback generator endpoint:", generatorEndpoint);
+
+                    const fallbackOptions = {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            user_id: appConfig.userId,
+                            profile: {
+                                stances: ["tech", "startup", "programming"],
+                                location: profileLocation ? profileLocation.value : "San Francisco"
+                            }
+                        })
+                    };
+
+                    const fallbackResponse = await fetch(generatorEndpoint, fallbackOptions);
+
+                    if (!fallbackResponse.ok) {
+                        throw new Error("Fallback generator API also failed");
+                    }
+
+                    const fallbackData = await fallbackResponse.json();
+                    if (fallbackData && fallbackData.recommendation) {
+                        addMessage(fallbackData.recommendation);
+                        hasSelectedRecommendation = true;
+                    } else {
+                        throw new Error("Invalid fallback format");
+                    }
+
+                } catch (fallbackError) {
+                    console.error("Fallback generator also failed:", fallbackError);
+
+                    // Final fallback to static recommendations
+                    const staticRecs = [
+                        "Yo, check this out! AI for Good Hackathon: A virtual hackathon focused on developing AI solutions for social impact challenges. (https://example.com/ai-hackathon)",
+                        "Found this for u! Machine Learning Workshop: Hands-on workshop covering the latest ML techniques with expert mentors to guide you. (https://example.com/ml-workshop)",
+                        "This is fire! Data Science Meetup: Connect with data professionals and learn about the latest trends in data science and analytics. (https://example.com/data-meetup)"
+                    ];
+
+                    // Select a random recommendation
+                    const randomRec = staticRecs[Math.floor(Math.random() * staticRecs.length)];
+                    addMessage(randomRec);
+                    hasSelectedRecommendation = true;
+                }
+            }
+
+        } catch (error) {
+            console.error("Error fetching recommendation:", error);
+            addMessage("Sorry, I couldn't find a recommendation right now. Let's chat about what you're looking for instead!");
+        } finally {
+            // Re-enable the recommend button
+            if (recommendButton) {
+                recommendButton.disabled = false;
+                recommendButton.innerHTML = '<i class="fas fa-lightbulb"></i> Recommend Opportunity';
+            }
+        }
+    }
+
     // === Event Listeners ===
-    
+
     // Chat event listeners
     if (sendButton) {
         sendButton.addEventListener('click', handleSend);
     }
-    
+
     if (messageInput) {
         messageInput.addEventListener('keypress', function(event) {
             if (event.key === 'Enter') {
                 handleSend();
             }
         });
+    }
+
+    // Recommend button event listener
+    if (recommendButton) {
+        recommendButton.addEventListener('click', fetchAndDisplayRecommendation);
     }
     
     // Profile event listeners
@@ -585,16 +967,10 @@ document.addEventListener('DOMContentLoaded', function() {
             handleRecommendationAction('like', this.getAttribute('data-id'));
         });
     });
-    
+
     skipButtons.forEach(button => {
         button.addEventListener('click', function() {
             handleRecommendationAction('skip', this.getAttribute('data-id'));
-        });
-    });
-    
-    chatButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            handleRecommendationAction('chat', this.getAttribute('data-id'));
         });
     });
     
@@ -773,8 +1149,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Fetch recommendation when the page loads
-    fetchRecommendation();
+    // Initialize the chat when the page loads
+    const savedProfile = localStorage.getItem('userProfile');
+
+    if (savedProfile) {
+        // If we have a saved profile, load it
+        appConfig.userProfile = JSON.parse(savedProfile);
+        appConfig.userOnboarded = true;
+    }
+    // Don't start onboarding automatically - the chat should start blank
 
     // When the page loads, start with the profile tab
     // On profile update, move to recommendations tab

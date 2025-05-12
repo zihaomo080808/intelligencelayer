@@ -422,6 +422,8 @@ body {
     font-size: 16px;
     line-height: 1.4;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    display: inline-block; /* This makes it fit content instead of stretching */
+    max-width: 100%; /* Ensure it doesn't overflow parent */
 }
 
 .user-message {
@@ -456,6 +458,9 @@ body {
     padding: 15px;
     background-color: #f8f8f8;
     border-top: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .input-wrapper {
@@ -497,6 +502,34 @@ body {
 #send-button:disabled {
     background-color: #cccccc;
     cursor: not-allowed;
+}
+
+.action-buttons {
+    display: flex;
+    justify-content: center;
+}
+
+.action-button {
+    background-color: #5856D6;
+    color: white;
+    border: none;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.2s;
+}
+
+.action-button:hover {
+    background-color: #4a49c0;
+}
+
+.action-button i {
+    font-size: 14px;
 }
 
 /* Typing indicator */

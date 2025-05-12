@@ -304,8 +304,8 @@ async def match_items_with_history(
         # Sort by score and get top_k
         scored_items.sort(key=lambda x: x["score"], reverse=True)
         top_items = scored_items[:top_k]
-        
-        # Record these recommendations in the database
+
+    # Record these recommendations in the database
         for item in top_items:
             new_recommendation = UserRecommendation(
                 user_id=user_id,
@@ -314,7 +314,7 @@ async def match_items_with_history(
                 status="shown"
             )
             session.add(new_recommendation)
-        
+
         await session.commit()
-        
+
         return top_items
