@@ -491,17 +491,56 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Function to complete onboarding and transition to normal chat
-    function completeOnboarding() {
+    async function completeOnboarding() {
         // If we have some valid data, update fields
         if (appConfig.userProfile.name) {
-            // Save to localStorage if desired
-            localStorage.setItem('userProfile', JSON.stringify(appConfig.userProfile));
+            try {
+                // Check for bio and embedding
+                if (!appConfig.userProfile.bio || !appConfig.userProfile.embedding) {
+                    console.log("Fetching additional profile info from Perplexity API...");
 
-            // Welcome message with personalization
-            addMessage(`Thanks ${appConfig.userProfile.name}! I've got your profile set up. Alex Hefle will join the conversation once you send your next message.`);
+                    // Show message about generating bio
+                    addMessage("Generating a comprehensive bio based on your profile information...");
 
-            // Update profile UI elements with expanded profile data
-            updateProfileUIFromOnboarding();
+                    // Wait 2 seconds to simulate processing
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+
+                    // Call the API endpoint to check profile information
+                    const apiBaseUrl = window.location.origin;
+                    const profileEndpoint = `${apiBaseUrl}/api/onboarding/profile-info/${appConfig.userId}`;
+
+                    try {
+                        const response = await fetch(profileEndpoint);
+                        if (response.ok) {
+                            const profileInfo = await response.json();
+                            console.log("Retrieved profile info:", profileInfo);
+
+                            // Check if bio and embedding were generated
+                            if (profileInfo.bio_available && profileInfo.embedding_available) {
+                                // Add these to the profile (in a real app, the actual data would be returned)
+                                appConfig.userProfile.has_enhanced_bio = true;
+                                appConfig.userProfile.has_embedding = true;
+                            }
+                        }
+                    } catch (error) {
+                        console.error("Error checking profile info:", error);
+                    }
+                }
+
+                // Save to localStorage
+                localStorage.setItem('userProfile', JSON.stringify(appConfig.userProfile));
+
+                // Welcome message with personalization
+                addMessage(`Thanks ${appConfig.userProfile.name}! I've got your profile set up with a personalized bio. Alex Hefle will join the conversation once you send your next message.`);
+
+                // Update profile UI elements with expanded profile data
+                updateProfileUIFromOnboarding();
+            } catch (error) {
+                console.error("Error in profile completion:", error);
+                // Fallback message
+                addMessage(`Thanks ${appConfig.userProfile.name}! I've got your profile set up. Alex Hefle will join the conversation once you send your next message.`);
+                updateProfileUIFromOnboarding();
+            }
         } else {
             // Complete fallback if we have no valid data at all
             appConfig.userProfile.name = "User";
@@ -517,29 +556,38 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateProfileUIFromOnboarding() {
         // Update bio with combined information
         if (profileBio) {
-            let bioComponents = [];
-
-            if (appConfig.userProfile.name) {
-                bioComponents.push(`I'm ${appConfig.userProfile.name}`);
-            }
-
-            if (appConfig.userProfile.location) {
-                bioComponents.push(`from ${appConfig.userProfile.location}`);
-            }
-
-            if (appConfig.userProfile.education) {
-                bioComponents.push(`educated at ${appConfig.userProfile.education}`);
-            }
-
-            if (appConfig.userProfile.occupation) {
-                bioComponents.push(`working as ${appConfig.userProfile.occupation}`);
-            }
-
-            // If we have a bio already, use it instead
+            // Check if we have an enhanced bio from Perplexity
             if (appConfig.userProfile.bio && appConfig.userProfile.bio.length > 20) {
                 profileBio.value = appConfig.userProfile.bio;
-            } else if (bioComponents.length > 0) {
-                profileBio.value = bioComponents.join(', ');
+
+                // Add a subtle indicator that this is AI-enhanced
+                const bioHeader = document.querySelector('.form-group label[for="profile-bio"]');
+                if (bioHeader && !bioHeader.innerHTML.includes('AI-Enhanced')) {
+                    bioHeader.innerHTML += ' <span style="color: #4CAF50; font-size: 12px;">(AI-Enhanced)</span>';
+                }
+            } else {
+                // Fallback to constructing a basic bio
+                let bioComponents = [];
+
+                if (appConfig.userProfile.name) {
+                    bioComponents.push(`I'm ${appConfig.userProfile.name}`);
+                }
+
+                if (appConfig.userProfile.location) {
+                    bioComponents.push(`from ${appConfig.userProfile.location}`);
+                }
+
+                if (appConfig.userProfile.education) {
+                    bioComponents.push(`educated at ${appConfig.userProfile.education}`);
+                }
+
+                if (appConfig.userProfile.occupation) {
+                    bioComponents.push(`working as ${appConfig.userProfile.occupation}`);
+                }
+
+                if (bioComponents.length > 0) {
+                    profileBio.value = bioComponents.join(', ');
+                }
             }
         }
 

@@ -24,7 +24,10 @@ class Settings(BaseSettings):
     VECTOR_DIM: int
     VECTOR_INDEX_PATH: str
     DATABASE_URL: str
-    
+
+    # Perplexity API settings
+    PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
+
     # Twilio settings
     TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
     TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", "")

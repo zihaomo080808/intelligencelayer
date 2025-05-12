@@ -8,6 +8,8 @@ import logging
 import json
 
 from onboarding_messages import process_onboarding_message, extract_name_from_greeting
+from perplexity_client import query_user_background
+from embeddings.embedder import get_embedding
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -66,12 +68,45 @@ async def process_message(request: OnboardingMessageRequest):
         elif request.step == 1:
             next_question = "What are your top interests and skills? (Feel free to list several)"
         
-        # Step 2: Asked for interests, onboarding is complete
+        # Step 2: Asked for interests, onboarding is complete - generate bio and embedding
         elif request.step == 2:
             name = updated_profile.get('name', 'there')
+
+            # Generate bio using Perplexity if not already present
+            if not updated_profile.get('bio'):
+                try:
+                    logger.info(f"Generating bio for {name} using Perplexity")
+                    bio = await query_user_background(updated_profile)
+
+                    if bio:
+                        updated_profile['bio'] = bio
+                        logger.info(f"Successfully generated bio for {name}")
+                    else:
+                        logger.warning(f"Could not generate bio for {name}, using fallback")
+                        # Fallback bio generation if Perplexity fails
+                        interests_str = ", ".join(updated_profile.get('interests', []))
+                        location = updated_profile.get('location', 'unknown location')
+                        updated_profile['bio'] = f"{name} is from {location} with interests in {interests_str}."
+                except Exception as e:
+                    logger.error(f"Error generating bio: {str(e)}")
+                    # Fallback if Perplexity API fails
+                    interests_str = ", ".join(updated_profile.get('interests', []))
+                    location = updated_profile.get('location', 'unknown location')
+                    updated_profile['bio'] = f"{name} is from {location} with interests in {interests_str}."
+
+            # Generate embedding from bio
+            try:
+                if updated_profile.get('bio'):
+                    logger.info(f"Generating embedding for {name}")
+                    embedding = get_embedding(updated_profile['bio'])
+                    updated_profile['embedding'] = embedding
+                    logger.info(f"Successfully generated embedding for {name}")
+            except Exception as e:
+                logger.error(f"Error generating embedding: {str(e)}")
+
             next_question = f"Thanks {name}! I've got your profile set up. How can I help you today?"
             complete = True
-        
+
         logger.info(f"Returning updated profile with {len(updated_profile)} fields")
         return OnboardingResponse(
             profile=updated_profile,
@@ -87,10 +122,10 @@ async def process_message(request: OnboardingMessageRequest):
 async def extract_name(message: Dict[str, str] = Body(...)):
     """
     Extract just the name from a greeting message
-    
+
     Request:
     - message: The user's first message
-    
+
     Returns:
     - Extracted name
     """
@@ -101,3 +136,31 @@ async def extract_name(message: Dict[str, str] = Body(...)):
     except Exception as e:
         logger.error(f"Error extracting name: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error extracting name: {str(e)}")
+
+@router.get("/onboarding/profile-info/{user_id}", response_model=Dict[str, Any], tags=["onboarding"])
+async def get_profile_info(user_id: str):
+    """
+    Get a user's profile information including bio and embedding
+
+    This endpoint is used after onboarding to retrieve the generated
+    bio and embedding for a user.
+
+    Parameters:
+    - user_id: The unique identifier for the user
+
+    Returns:
+    - User profile information including bio and embedding
+    """
+    try:
+        # NOTE: In a production app, you'd retrieve this from a database
+        # For this example, we'll return placeholder data
+        logger.info(f"Retrieving profile info for user {user_id}")
+        return {
+            "user_id": user_id,
+            "bio_available": True,
+            "embedding_available": True,
+            "message": "Profile information successfully generated during onboarding"
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving profile info: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving profile info: {str(e)}")

@@ -13,8 +13,8 @@ asyncpg==0.29.0
 numpy
 python-multipart
 twilio==8.10.2
-pytest 
-pytest-asyncio 
+pytest
+pytest-asyncio
 pydantic-settings==2.0.3
 httpx==0.25.1
 

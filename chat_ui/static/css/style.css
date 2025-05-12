@@ -437,6 +437,7 @@ body {
     background-color: #E9E9EB;
     color: #000;
     border-bottom-left-radius: 5px;
+    align-self: flex-start;
 }
 
 .time {
