@@ -93,7 +93,6 @@ async def process_message(request: OnboardingMessageRequest):
                     interests_str = ", ".join(updated_profile.get('interests', []))
                     location = updated_profile.get('location', 'unknown location')
                     updated_profile['bio'] = f"{name} is from {location} with interests in {interests_str}."
-
             # Generate embedding from bio
             try:
                 if updated_profile.get('bio'):

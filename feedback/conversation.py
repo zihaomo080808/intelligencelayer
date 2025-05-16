@@ -152,7 +152,7 @@ async def analyze_conversation(
         """
         
         response = await client.chat.completions.create(
-            model="gpt-4",  # or "gpt-3.5-turbo" for lower cost
+            model="gpt-4o",  # or "gpt-3.5-turbo" for lower cost
             messages=[
                 {"role": "system", "content": "You are an AI assistant that analyzes conversations to extract interest levels and insights."},
                 {"role": "user", "content": prompt}
