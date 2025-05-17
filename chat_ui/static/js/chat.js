@@ -51,7 +51,8 @@ document.addEventListener('DOMContentLoaded', function() {
         onboardingStep: 0,
         maxOnboardingAttempts: 3,  // Number of attempts before auto-completing
         onboardingAttempts: 0,
-        useIntelligentOnboarding: true // Flag to use the new API-based onboarding
+        useIntelligentOnboarding: true, // Flag to use the new API-based onboarding
+        serverSessionId: null // Track server session ID
     };
     
     // Update displayed user ID
@@ -59,6 +60,52 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Always allow direct chat access
     let hasSelectedRecommendation = true;
+
+    // Function to check server session and force onboarding if needed
+    async function checkServerSession() {
+        try {
+            const response = await fetch('/api/session-info');
+            if (!response.ok) {
+                throw new Error('Failed to fetch session info');
+            }
+            const sessionInfo = await response.json();
+            
+            // Get the last known session ID from localStorage
+            const lastSessionId = localStorage.getItem('serverSessionId');
+            
+            // If this is a new session (server restarted) or first visit
+            if (!lastSessionId || lastSessionId !== sessionInfo.session_id) {
+                // Clear any saved profile
+                localStorage.removeItem('userProfile');
+                // Save the new session ID
+                localStorage.setItem('serverSessionId', sessionInfo.session_id);
+                // Force onboarding
+                appConfig.userOnboarded = false;
+                appConfig.onboardingStep = 0;
+                appConfig.serverSessionId = sessionInfo.session_id;
+                
+                // If we're on the chat tab, start onboarding
+                if (document.querySelector('.tab[data-tab="chat"]').classList.contains('active')) {
+                    if (chatMessages) {
+                        chatMessages.innerHTML = '';
+                        startOnboarding();
+                    }
+                }
+            } else {
+                // Same session, load profile if exists
+                const savedProfile = localStorage.getItem('userProfile');
+                if (savedProfile) {
+                    appConfig.userProfile = JSON.parse(savedProfile);
+                    appConfig.userOnboarded = true;
+                }
+            }
+        } catch (error) {
+            console.error('Error checking server session:', error);
+            // On error, assume new session and force onboarding
+            appConfig.userOnboarded = false;
+            appConfig.onboardingStep = 0;
+        }
+    }
 
     // Tab switching
     function switchTab(tabId) {
@@ -76,24 +123,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // If switching to chat tab
             if (tabId === 'chat') {
-                // Check for saved profile first
-                const savedProfile = localStorage.getItem('userProfile');
-
-                if (savedProfile) {
-                    // If we have a saved profile, load it
-                    appConfig.userProfile = JSON.parse(savedProfile);
-                    appConfig.userOnboarded = true;
-                }
-
-                // Focus on message input regardless of onboarding status
+                // Focus on message input
                 if (messageInput) {
                     setTimeout(() => messageInput.focus(), 100);
                 }
 
-                // Make sure the chat is blank if not onboarded and no messages yet
+                // Start onboarding if not already onboarded
                 if (!appConfig.userOnboarded && chatMessages && chatMessages.children.length === 0) {
-                    // Ensure the chat is empty - don't add any starting messages
                     chatMessages.innerHTML = '';
+                    startOnboarding();
                 }
             }
         }
@@ -201,19 +239,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 location: appConfig.opportunity.location
             };
 
-            // Debug log for message
-            console.log("User message:", message);
-            console.log("Opportunity details:", opportunityDetails);
-
             // Prepare the API request
             // Get the API URL from the config, or use a default
             const apiBaseUrl = window.location.origin;  // Use the current origin (proxy server)
 
             // Parse the API URL to determine which endpoint to use
-            let endpoint = `${apiBaseUrl}/api/conversation`;
 
             // Debug log for API endpoint
-            console.log("Using API endpoint:", endpoint);
 
             // Make the actual API call with automatic fallback
             try {
@@ -238,25 +270,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 };
 
                 // First try the primary endpoint
-                console.log(`Trying API endpoint: ${endpoint}`);
-                let response;
-
-                try {
-                    response = await fetch(endpoint, requestOptions);
-                    console.log("Response status:", response.status);
-                } catch (primaryError) {
-                    console.warn(`Primary API endpoint failed: ${primaryError.message}`);
-                    // Try the fallback endpoint
-                    const fallbackEndpoint = `${apiBaseUrl}/twilio/feedback/chat`;
-                    console.log(`Trying fallback API endpoint: ${fallbackEndpoint}`);
-                    try {
-                        response = await fetch(fallbackEndpoint, requestOptions);
-                        console.log("Fallback response status:", response.status);
-                    } catch (fallbackError) {
-                        console.error("Fallback endpoint also failed:", fallbackError);
-                        throw new Error("Both API endpoints failed");
-                    }
-                }
+                const fallbackEndpoint = `${apiBaseUrl}/twilio/feedback/chat`;
+                response = await fetch(fallbackEndpoint, requestOptions);
 
                 // Check if the request was successful
                 if (!response.ok) {
@@ -360,12 +375,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 const apiBaseUrl = window.location.origin;
                 const endpoint = `${apiBaseUrl}/api/onboarding/process`;
 
-                console.log(`Processing onboarding message using API (step ${appConfig.onboardingStep})`);
-
-                const response = await fetch(endpoint, {
+                // Prepare request options
+                const requestOptions = {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     },
                     body: JSON.stringify({
                         message: message,
@@ -373,42 +388,51 @@ document.addEventListener('DOMContentLoaded', function() {
                         profile: appConfig.userProfile,
                         user_id: appConfig.userId
                     })
-                });
+                };
 
-                if (!response.ok) {
-                    throw new Error(`API error: ${response.status}`);
-                }
+                // Make the API call
+                try {
+                    const response = await fetch(endpoint, requestOptions);
+                    console.log("Response status:", response.status);
 
-                const data = await response.json();
-                console.log("Onboarding API response:", data);
-
-                // Update user profile with extracted information
-                if (data.profile) {
-                    appConfig.userProfile = data.profile;
-                }
-
-                // Hide typing indicator
-                hideTypingIndicator();
-
-                // Move to next step
-                appConfig.onboardingStep++;
-                appConfig.onboardingAttempts = 0; // Reset attempts
-
-                // Add the next question or complete onboarding
-                if (data.complete) {
-                    completeOnboarding();
-                } else if (data.next_question) {
-                    addMessage(data.next_question);
-                } else {
-                    // Fallback if no next question is provided
-                    if (appConfig.onboardingStep <= onboardingQuestions.length) {
-                        const nextQuestion = onboardingQuestions[appConfig.onboardingStep];
-                        addMessage(nextQuestion.replace('{name}', appConfig.userProfile.name || 'there'));
-                    } else {
-                        completeOnboarding();
+                    if (!response.ok) {
+                        throw new Error(`API error: ${response.status}`);
                     }
-                }
 
+                    const data = await response.json();
+                    console.log("API response:", data);
+
+                    // Update user profile with extracted information
+                    if (data.profile) {
+                        appConfig.userProfile = data.profile;
+                    }
+
+                    // Hide typing indicator
+                    hideTypingIndicator();
+
+                    // Move to next step
+                    appConfig.onboardingStep++;
+                    appConfig.onboardingAttempts = 0; // Reset attempts
+
+                    // Add the next question or complete onboarding
+                    if (data.is_complete) {
+                        completeOnboarding();
+                    } else if (data.next_question) {
+                        addMessage(data.next_question);
+                    } else {
+                        // Fallback if no next question is provided
+                        if (appConfig.onboardingStep <= onboardingQuestions.length) {
+                            const nextQuestion = onboardingQuestions[appConfig.onboardingStep];
+                            addMessage(nextQuestion.replace('{name}', appConfig.userProfile.name || 'there'));
+                        } else {
+                            completeOnboarding();
+                        }
+                    }
+                } catch (apiError) {
+                    console.error("API call failed:", apiError);
+                    hideTypingIndicator();
+                    throw apiError; // Re-throw to be caught by outer try-catch
+                }
             } else {
                 // Fallback to the original simple onboarding logic
                 hideTypingIndicator();
@@ -499,12 +523,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!appConfig.userProfile.bio || !appConfig.userProfile.embedding) {
                     console.log("Fetching additional profile info from Perplexity API...");
 
-                    // Show message about generating bio
-                    addMessage("Generating a comprehensive bio based on your profile information...");
-
-                    // Wait 2 seconds to simulate processing
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-
                     // Call the API endpoint to check profile information
                     const apiBaseUrl = window.location.origin;
                     const profileEndpoint = `${apiBaseUrl}/api/onboarding/profile-info/${appConfig.userId}`;
@@ -517,7 +535,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
                             // Check if bio and embedding were generated
                             if (profileInfo.bio_available && profileInfo.embedding_available) {
-                                // Add these to the profile (in a real app, the actual data would be returned)
+                                // Update the profile with the actual data from the API
+                                appConfig.userProfile.bio = profileInfo.bio;
+                                appConfig.userProfile.location = profileInfo.location;
+                                appConfig.userProfile.stances = profileInfo.stances;
                                 appConfig.userProfile.has_enhanced_bio = true;
                                 appConfig.userProfile.has_embedding = true;
                             }
@@ -531,7 +552,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 localStorage.setItem('userProfile', JSON.stringify(appConfig.userProfile));
 
                 // Welcome message with personalization
-                addMessage(`Thanks ${appConfig.userProfile.name}! I've got your profile set up with a personalized bio. Alex Hefle will join the conversation once you send your next message.`);
+                if (appConfig.userProfile.has_enhanced_bio) {
+                    addMessage(`Thanks ${appConfig.userProfile.name}! I've got your profile set up with a personalized bio. Alex Hefle will join the conversation once you send your next message.`);
+                } else {
+                    addMessage(`Thanks ${appConfig.userProfile.name}! I've got your profile set up. Alex Hefle will join the conversation once you send your next message.`);
+                }
 
                 // Update profile UI elements with expanded profile data
                 updateProfileUIFromOnboarding();
@@ -544,7 +569,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             // Complete fallback if we have no valid data at all
             appConfig.userProfile.name = "User";
-            addMessage("Great! Your profile is set up. Alex Hefle will join the conversation once you send your next message.");
+            addMessage("Thanks, Alex Hefle will join the conversation once you send your next message.");
         }
 
         // IMPORTANT: Only set the onboarded flag AFTER the final onboarding message is shown
@@ -1198,16 +1223,5 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Initialize the chat when the page loads
-    const savedProfile = localStorage.getItem('userProfile');
-
-    if (savedProfile) {
-        // If we have a saved profile, load it
-        appConfig.userProfile = JSON.parse(savedProfile);
-        appConfig.userOnboarded = true;
-    }
-    // Don't start onboarding automatically - the chat should start blank
-
-    // When the page loads, start with the profile tab
-    // On profile update, move to recommendations tab
-    // Chat tab now has initial recommendations from the API
+    checkServerSession();
 });
