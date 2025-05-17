@@ -1,17 +1,13 @@
-"""
-onboarding_messages.py - Handles intelligent parsing of user onboarding messages
-
-This module uses the OpenAI API to extract structured information from user messages
-during the onboarding process. It helps create detailed user profiles from free-form
-text responses.
-"""
-
 import logging
 import json
 import os
 from typing import Dict, Any, Optional, List, Union
-from openai import OpenAI
+from openai import AsyncOpenAI
 from config import settings
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from fastapi import Depends
+from database.session import get_db
 
 # Configure logging
 logging.basicConfig(
@@ -25,7 +21,7 @@ logger.info(f"OPENAI_API_KEY set?: {bool(settings.OPENAI_API_KEY)}")
 logger.info(f"OPENAI_API_KEY length: {len(settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else 0}")
 
 try:
-    client = OpenAI(
+    client = AsyncOpenAI(
         api_key=settings.OPENAI_API_KEY,
         timeout=20.0
     )
@@ -33,7 +29,7 @@ try:
 except Exception as e:
     logger.error(f"Error initializing OpenAI client: {str(e)}")
     # Create the client anyway - we'll handle errors during the API call
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 # Define the user profile schema - adjust as needed for your application
 USER_PROFILE_SCHEMA = {
@@ -93,14 +89,12 @@ async def extract_profile_info(user_message: str, step: int = 0) -> Dict[str, An
         logger.info(f"Extracting profile info from message (step {step}): {user_message[:50]}...")
         
         # Call the OpenAI API
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=settings.CLASSIFIER_MODEL or "gpt-3.5-turbo", # Use a simpler model for cost efficiency
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_specific_prompt}
             ],
-            temperature=0.2,  # Lower temperature for more consistent results
-            max_tokens=500
         )
         
         # Extract the response
@@ -169,28 +163,131 @@ def merge_profile_updates(existing_profile: Dict[str, Any], new_data: Dict[str, 
     
     return merged
 
-async def process_onboarding_message(message: str, step: int, existing_profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def process_onboarding_message(
+    message: str,
+    step: int,
+    current_profile: Dict[str, Any],
+    user_id: str,
+    db: AsyncSession
+) -> tuple[Dict[str, Any], str, bool]:
     """
-    Process a message during the onboarding flow and update the user profile
+    Process an onboarding message and update the user profile
     
     Args:
         message: The user's message
-        step: The current onboarding step
-        existing_profile: The existing user profile (if any)
+        step: The current onboarding step (0 = name, 1 = background, 2 = interests)
+        current_profile: The existing user profile
+        user_id: The user's ID
+        db: Database session
         
     Returns:
-        Updated user profile
+        Tuple of (updated_profile, next_question, is_complete)
     """
-    if existing_profile is None:
-        existing_profile = {}
-    
-    # Extract profile info from the message
-    extracted_info = await extract_profile_info(message, step)
-    
-    # Merge the extracted info into the existing profile
-    updated_profile = merge_profile_updates(existing_profile, extracted_info)
-    
-    return updated_profile
+    try:
+        # Extract profile information
+        extracted_info = await extract_profile_info(message, step)
+        logger.info(f"Extracted info: {extracted_info}")
+        
+        # Merge with current profile
+        updated_profile = {**current_profile, **extracted_info}
+        logger.info(f"Updated profile: {updated_profile}")
+        
+        # If this is the final step, generate bio and embedding
+        if step == 2:  # Final step
+            # Generate bio using Perplexity
+            bio = await query_user_background(updated_profile)
+            if bio:
+                updated_profile['bio'] = bio
+            
+            # Generate embedding
+            if updated_profile.get('bio'):
+                embedding = await get_embedding(updated_profile['bio'])
+                if embedding:
+                    updated_profile['embedding'] = embedding
+        
+        # Save to database
+        try:
+            # Check if profile exists
+            result = await db.execute(
+                select(UserProfile).where(UserProfile.user_id == user_id)
+            )
+            profile = result.scalar_one_or_none()
+            
+            if profile:
+                # Update existing profile
+                for key, value in updated_profile.items():
+                    setattr(profile, key, value)
+            else:
+                # Create new profile
+                profile = UserProfile(
+                    user_id=user_id,
+                    bio=updated_profile.get('bio'),
+                    location=updated_profile.get('location'),
+                    stances=updated_profile.get('stances', {}),
+                    embedding=updated_profile.get('embedding')
+                )
+                db.add(profile)
+            
+            await db.commit()
+            logger.info(f"Profile saved to database for user {user_id}")
+        except Exception as db_error:
+            logger.error(f"Error saving profile to database: {str(db_error)}")
+            # Continue even if database save fails
+        
+        # Determine next question and completion status
+        next_question = None
+        is_complete = False
+        
+        if step == 0:  # After name
+            next_question = "Great! Could you tell me a bit about your background? Where are you from, what's your education, and what do you do?"
+        elif step == 1:  # After background
+            next_question = "Thanks! What are your main interests and what kind of opportunities are you looking for?"
+        elif step == 2:  # After interests
+            is_complete = True
+        
+        return updated_profile, next_question, is_complete
+        
+    except Exception as e:
+        logger.error(f"Error processing onboarding message: {str(e)}")
+        raise
+
+async def generate_bio(profile: Dict[str, Any]) -> str:
+    """Generate a bio using OpenAI"""
+    try:
+        # Create a prompt for bio generation
+        prompt = f"""Generate a concise, engaging bio for a user with the following profile:
+        Name: {profile.get('name', 'User')}
+        Location: {profile.get('location', 'Unknown')}
+        Education: {profile.get('education', 'Not specified')}
+        Occupation: {profile.get('occupation', 'Not specified')}
+        Interests: {', '.join(profile.get('interests', []))}
+        
+        The bio should be 1-2 sentences, professional but friendly."""
+        
+        response = await client.chat.completions.create(
+            model=settings.GENERATOR_MODEL or "gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a professional bio writer."},
+                {"role": "user", "content": prompt}
+            ],
+        )
+        
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"Error generating bio: {str(e)}")
+        return None
+
+async def get_embedding(text: str) -> List[float]:
+    """Get embedding for text using OpenAI"""
+    try:
+        response = await client.embeddings.create(
+            model=settings.EMBEDDING_MODEL or "text-embedding-ada-002",
+            input=text
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        logger.error(f"Error getting embedding: {str(e)}")
+        return None
 
 # Function for parsing the name from a greeting message (first message)
 async def extract_name_from_greeting(message: str) -> str:
@@ -224,5 +321,5 @@ async def handle_profile_extraction(request_data: Dict[str, Any]) -> Dict[str, A
     if not message:
         return {'error': 'No message provided'}
     
-    updated_profile = await process_onboarding_message(message, step, existing_profile)
+    updated_profile = await process_onboarding_message(message, step, existing_profile, '')
     return {'profile': updated_profile}

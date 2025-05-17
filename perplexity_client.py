@@ -1,10 +1,3 @@
-"""
-perplexity_client.py - Client for interacting with the Perplexity API
-
-This module provides functions to query the Perplexity API for generating background
-information about users based on their profile data.
-"""
-
 import logging
 import json
 import httpx
