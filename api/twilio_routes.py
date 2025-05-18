@@ -25,6 +25,7 @@ from feedback.conversation import (
     record_nuanced_feedback
 )
 from config import settings
+from agents.conversation_agent import _extract_conversation_messages
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -116,14 +117,32 @@ async def handle_sms(
             if location:
                 text_to_embed = f"{new_bio}\n\nLocation: {location}"
             embedding = get_embedding(text_to_embed)
-            
+
+            # Fetch conversation history if available
+            conversation_history = []
+            # Try to get the latest conversation for this user (and item if available)
+            try:
+                from sqlalchemy import select, desc
+                result = await db.execute(
+                    select(UserConversation)
+                    .where(UserConversation.user_id == user_id)
+                    .order_by(desc(UserConversation.started_at))
+                )
+                conversation = result.scalars().first()
+                if conversation and conversation.transcript:
+                    messages = _extract_conversation_messages(conversation.transcript)
+                    conversation_history = messages[-3:] if len(messages) >= 3 else messages
+            except Exception as e:
+                logger.warning(f"Could not fetch conversation history: {e}")
+
             # Update profile
             await update_profile(
                 user_id=user_id,
                 bio=new_bio,
                 stances=stances,
                 embedding=embedding,
-                location=location
+                location=location,
+                conversation_history=conversation_history
             )
             
             resp.message("Your profile has been updated! Text me again for new recommendations.")

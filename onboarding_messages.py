@@ -190,8 +190,8 @@ async def process_onboarding_message(
         extracted_info = await extract_profile_info(message, step)
         logger.info(f"Extracted info: {extracted_info}")
         
-        # Merge with current profile
-        updated_profile = {**current_profile, **extracted_info}
+        # Merge with current profile, ensuring we don't overwrite username with null
+        updated_profile = merge_profile_updates(current_profile, extracted_info)
         logger.info(f"Updated profile: {updated_profile}")
         
         # If this is the final step, generate bio and embedding

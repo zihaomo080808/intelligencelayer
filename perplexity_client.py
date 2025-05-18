@@ -38,9 +38,7 @@ async def query_user_background(profile: Dict[str, Any]) -> str:
         
         # Create prompt for the API
         prompt = f"""
-        Based on the following information about {name}, search for this person on the internet, generating a detailed, professional bio 
-        that would describe this person well. Include relevant details to create a coherent, 
-        contextual background story, do not output any image:
+        can you search on the internet and generate a 5-6 sentence personal bio for me a person called Zikang Jiang who has this profile:
         
         Name: {name}
         Location: {location}
@@ -49,10 +47,8 @@ async def query_user_background(profile: Dict[str, Any]) -> str:
         Current Projects: {current_projects_str}
         Interests: {interests_str}
         Skills: {skills_str}
-        
-        Make the bio factual based on the provided information. Avoid embellishment or making 
-        up additional details not supported by the information provided. The bio should be 
-        5-6 sentences and professional in tone.
+
+        I want the bio to be accurate and comprehensive to the point that any info the person logs online it will be included. You do not have to use complete sentences, output in the most efficient but still understandable way (example format: time, experience, location, results with data, important details)
         """
         
         # Prepare the API request

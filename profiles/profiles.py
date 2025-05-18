@@ -110,6 +110,34 @@ async def generate_embedding(text: str) -> list:
             detail=error_msg
         )
 
+async def merge_bios_with_openai(existing_bio: str, new_bio: str, conversation_history: list = None) -> str:
+    # Format the last 3 conversation messages
+    history_str = ""
+    if conversation_history:
+        history_str = "\n\nHere are the last 3 messages between the user and the chat agent:\n"
+        for msg in conversation_history[-3:]:
+            if isinstance(msg, dict):
+                history_str += f"{msg.get('role', 'unknown')}: {msg.get('content', '')}\n"
+            else:
+                history_str += f"{msg}\n"
+
+    prompt = (
+        f"You are an expert at writing concise, engaging bios. "
+        f"Here is the user's current bio:\n\n{existing_bio}\n\n"
+        f"Here is a new update or correction from the user:\n\n{new_bio}\n\n"
+        f"{history_str}"
+        f"Please merge the new information and any relevant context from the conversation into the existing bio, keeping it concise and natural. "
+        f"Return only the merged bio."
+    )
+    response = await client.chat.completions.create(
+        model=settings.GENERATOR_MODEL or "gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant that merges user bios."},
+            {"role": "user", "content": prompt}
+        ],
+    )
+    return response.choices[0].message.content.strip()
+
 async def update_profile(
     user_id: str, 
     username: Optional[str] = None,
@@ -117,14 +145,15 @@ async def update_profile(
     location: Optional[str] = None, 
     stances: Optional[Dict[str, Any]] = None,
     embedding: Optional[list] = None,
-    db: AsyncSession = None
+    db: AsyncSession = None,
+    conversation_history: Optional[list] = None
 ):
     """Update a user profile, creating it if it doesn't exist."""
     if db is None:
         async with AsyncSessionLocal() as db:
-            return await _update_profile(user_id, username, bio, location, stances, embedding, db)
+            return await _update_profile(user_id, username, bio, location, stances, embedding, db, conversation_history)
     else:
-        return await _update_profile(user_id, username, bio, location, stances, embedding, db)
+        return await _update_profile(user_id, username, bio, location, stances, embedding, db, conversation_history)
 
 async def _update_profile(
     user_id: str, 
@@ -133,9 +162,12 @@ async def _update_profile(
     location: Optional[str], 
     stances: Optional[Dict[str, Any]],
     embedding: Optional[list],
-    db: AsyncSession
+    db: AsyncSession,
+    conversation_history: Optional[list] = None
 ):
     """Internal function to update a profile with a provided database session."""
+    if conversation_history is None:
+        conversation_history = []
     # Check if profile exists
     profile = await get_profile(user_id, db)
     
@@ -145,7 +177,12 @@ async def _update_profile(
         if username is not None:
             update_data["username"] = username
         if bio is not None:
-            update_data["bio"] = bio
+            if profile.bio:
+                # Merge bios using OpenAI, include conversation history
+                merged_bio = await merge_bios_with_openai(profile.bio, bio, conversation_history)
+                update_data["bio"] = merged_bio
+            else:
+                update_data["bio"] = bio
         if location is not None:
             update_data["location"] = location
         if stances is not None:
