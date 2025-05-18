@@ -34,6 +34,7 @@ rocchio_updater = RocchioUpdater()
 
 # Pydantic models for request/response
 class ProfileBase(BaseModel):
+    username: Optional[str] = None
     bio: Optional[str] = None
     location: Optional[str] = None
     stances: Optional[Dict[str, Any]] = Field(default_factory=dict)
@@ -43,7 +44,6 @@ class ProfileCreate(ProfileBase):
 
 class ProfileResponse(ProfileBase):
     user_id: str
-    embedding: Optional[List[float]] = None
     updated_at: datetime
 
     class Config:
@@ -51,10 +51,6 @@ class ProfileResponse(ProfileBase):
 
 # Initialize FastAPI router
 router = APIRouter()
-
-# Check if OpenAI API key is set
-if not settings.OPENAI_API_KEY:
-    logger.warning("OPENAI_API_KEY is not set. Embeddings will not be generated.")
 
 async def init_db():
     """Create database tables if they don't exist."""
@@ -116,6 +112,7 @@ async def generate_embedding(text: str) -> list:
 
 async def update_profile(
     user_id: str, 
+    username: Optional[str] = None,
     bio: Optional[str] = None,
     location: Optional[str] = None, 
     stances: Optional[Dict[str, Any]] = None,
@@ -125,12 +122,13 @@ async def update_profile(
     """Update a user profile, creating it if it doesn't exist."""
     if db is None:
         async with AsyncSessionLocal() as db:
-            return await _update_profile(user_id, bio, location, stances, embedding, db)
+            return await _update_profile(user_id, username, bio, location, stances, embedding, db)
     else:
-        return await _update_profile(user_id, bio, location, stances, embedding, db)
+        return await _update_profile(user_id, username, bio, location, stances, embedding, db)
 
 async def _update_profile(
     user_id: str, 
+    username: Optional[str],
     bio: Optional[str],
     location: Optional[str], 
     stances: Optional[Dict[str, Any]],
@@ -144,6 +142,8 @@ async def _update_profile(
     if profile:
         # Update existing profile
         update_data = {}
+        if username is not None:
+            update_data["username"] = username
         if bio is not None:
             update_data["bio"] = bio
         if location is not None:
@@ -174,11 +174,12 @@ async def _update_profile(
             logger.info(f"Generated embedding for new user {user_id}")
         
         new_profile = UserProfile(
-                user_id=user_id, 
-                bio=bio, 
-                location=location,
+            user_id=user_id,
+            username=username,
+            bio=bio,
+            location=location,
             stances=stances if stances is not None else {},
-                embedding=embedding
+            embedding=embedding
         )
         db.add(new_profile)
         await db.commit()
@@ -258,6 +259,7 @@ async def create_or_update_profile(
     try:
         profile = await update_profile(
             user_id=user_id,
+            username=profile_data.username,
             bio=profile_data.bio,
             location=profile_data.location,
             stances=profile_data.stances,

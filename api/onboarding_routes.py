@@ -123,6 +123,7 @@ async def get_profile_info(user_id: str, db: AsyncSession = Depends(get_db)):
         if profile:
             return {
                 "user_id": user_id,
+                "username": profile.username,
                 "bio_available": bool(profile.bio),
                 "embedding_available": bool(profile.embedding),
                 "bio": profile.bio,
@@ -133,6 +134,7 @@ async def get_profile_info(user_id: str, db: AsyncSession = Depends(get_db)):
         else:
             return {
                 "user_id": user_id,
+                "username": None,
                 "bio_available": False,
                 "embedding_available": False,
                 "message": "No profile found for this user"

@@ -35,7 +35,7 @@ except Exception as e:
 
 # Define the user profile schema - adjust as needed for your application
 USER_PROFILE_SCHEMA = {
-    "name": "string",
+    "username": "string",  # Changed from "name" to "username" to match database field
     "location": "string",
     "education": "string",
     "occupation": "string",
@@ -56,7 +56,7 @@ Extract all possible information from the user's message and format it according
 Follow these rules:
 1. For fields where no information is provided, use null.
 2. Make reasonable inferences for ambiguous information but don't invent facts.
-3. For name, extract only their first name if possible (not their full name).
+3. For username, extract only their first name if possible (not their full name).
 4. For location, extract the most detailed location information available.
 5. For list fields, include all relevant items mentioned.
 6. Keep all responses concise.
@@ -177,7 +177,7 @@ async def process_onboarding_message(
     
     Args:
         message: The user's message
-        step: The current onboarding step (0 = name, 1 = background, 2 = interests)
+        step: The current onboarding step (0 = username, 1 = background, 2 = interests)
         current_profile: The existing user profile
         user_id: The user's ID
         db: Database session
@@ -223,6 +223,7 @@ async def process_onboarding_message(
                 # Create new profile
                 profile = UserProfile(
                     user_id=user_id,
+                    username=updated_profile.get('username'),  # Use username directly
                     bio=updated_profile.get('bio'),
                     location=updated_profile.get('location'),
                     stances=updated_profile.get('stances', {}),
@@ -244,7 +245,7 @@ async def process_onboarding_message(
         next_question = ""
         is_complete = False
         
-        if step == 0:  # After name
+        if step == 0:  # After username
             next_question = "Great! Could you tell me a bit about your background? Where are you from, what's your education, and what do you do?"
         elif step == 1:  # After background
             next_question = "Thanks! What are your main interests and what kind of opportunities are you looking for?"
@@ -301,19 +302,19 @@ async def get_embedding(text: str) -> List[float]:
         logger.error(f"Error getting embedding: {str(e)}")
         return None
 
-# Function for parsing the name from a greeting message (first message)
+# Function for parsing the username from a greeting message (first message)
 async def extract_name_from_greeting(message: str) -> str:
     """
-    Extract just the name from a greeting message
+    Extract just the username from a greeting message
     
     Args:
         message: The user's first message
         
     Returns:
-        Extracted name or empty string
+        Extracted username or empty string
     """
     extracted_info = await extract_profile_info(message, 0)
-    return extracted_info.get('name', '')
+    return extracted_info.get('username', '')
 
 # API endpoint handlers for Flask/FastAPI integration
 async def handle_profile_extraction(request_data: Dict[str, Any]) -> Dict[str, Any]:

@@ -36,6 +36,7 @@ class UserProfile(Base):
     __tablename__ = "profiles"
 
     user_id = Column(String, primary_key=True, index=True)
+    username = Column(String, nullable=True)  # Added username field
     bio = Column(String, nullable=True)
     location = Column(String, nullable=True)
     stances = Column(JSON, default={})

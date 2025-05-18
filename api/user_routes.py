@@ -20,13 +20,15 @@ logger = logging.getLogger(__name__)
 
 class ProfileIn(BaseModel):
     user_id: str
+    username: Optional[str] = None
     bio: str
-    location: Optional[str] = None   # ← new
+    location: Optional[str] = None
 
 class ProfileOut(BaseModel):
     user_id: str
+    username: Optional[str] = None
     stances: List[str]
-    location: Optional[str] = None   # ← new
+    location: Optional[str] = None
 
 class RecOut(BaseModel):
     recommendations: str
@@ -61,14 +63,16 @@ async def create_profile(inp: ProfileIn):
     # 3) store profile (now including location)
     await update_profile(
         user_id=inp.user_id,
+        username=inp.username,
         bio=inp.bio,
         stances=stances,
         embedding=embedding,
-        location=inp.location       # ← pass it through
+        location=inp.location
     )
 
     return {
         "user_id": inp.user_id,
+        "username": inp.username,
         "stances": stances,
         "location": inp.location
     }
