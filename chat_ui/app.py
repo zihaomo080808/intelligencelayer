@@ -4,7 +4,7 @@ import requests
 app = Flask(__name__)
 
 # API server configuration
-API_SERVER = 'http://localhost:8000'
+API_SERVER = 'http://localhost:8001'  # Updated to match the running server port
 
 @app.route('/')
 def index():
@@ -71,6 +71,9 @@ def proxy_onboarding():
     This allows the UI server to forward onboarding requests to the API server.
     """
     try:
+        print(f"Forwarding onboarding request to {API_SERVER}/api/onboarding/process")
+        print(f"Request payload: {request.json}")
+        
         # Forward the request to the API server
         response = requests.post(
             f"{API_SERVER}/api/onboarding/process",
@@ -78,11 +81,30 @@ def proxy_onboarding():
             headers={
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
-            }
+            },
+            timeout=30  # Add a longer timeout to prevent premature timeouts
         )
-
-        # Return the API response to the client
-        return jsonify(response.json()), response.status_code
+        
+        print(f"API response status: {response.status_code}")
+        
+        # Get the raw response content
+        raw_content = response.content.decode('utf-8')
+        print(f"API raw response: {raw_content}")
+        
+        # Try to parse as JSON
+        try:
+            json_response = response.json()
+            print(f"API JSON response: {json_response}")
+            # Return the API response to the client
+            return jsonify(json_response), response.status_code
+        except Exception as json_err:
+            print(f"Error parsing API response as JSON: {str(json_err)}")
+            # If we can't parse as JSON, return the raw content with error status
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid JSON response from API: {str(json_err)}",
+                "raw_response": raw_content
+            }), 500
     except requests.RequestException as e:
         # Handle connection error
         return jsonify({

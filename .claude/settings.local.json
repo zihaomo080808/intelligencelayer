@@ -7,7 +7,12 @@
       "Bash(docker-compose exec:*)",
       "Bash(ls:*)",
       "Bash(mkdir:*)",
-      "Bash(docker-compose restart:*)"
+      "Bash(docker-compose restart:*)",
+      "Bash(python:*)",
+      "Bash(cat:*)",
+      "Bash(pkill:*)",
+      "Bash(kill:*)",
+      "Bash(source:*)"
     ],
     "deny": []
   }

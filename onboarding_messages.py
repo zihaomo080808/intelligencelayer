@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fastapi import Depends
 from database.session import get_db
+from database.models import UserProfile
+from perplexity_client import query_user_background
 
 # Configure logging
 logging.basicConfig(
@@ -231,11 +233,15 @@ async def process_onboarding_message(
             await db.commit()
             logger.info(f"Profile saved to database for user {user_id}")
         except Exception as db_error:
+            import traceback
+            db_stack_trace = traceback.format_exc()
             logger.error(f"Error saving profile to database: {str(db_error)}")
-            # Continue even if database save fails
+            logger.error(f"Database operation stack trace: {db_stack_trace}")
+            logger.error(f"User ID: {user_id}, Profile data: {updated_profile}")
+            # Continue even if database save fails, but log comprehensive information
         
         # Determine next question and completion status
-        next_question = None
+        next_question = ""
         is_complete = False
         
         if step == 0:  # After name
@@ -244,12 +250,18 @@ async def process_onboarding_message(
             next_question = "Thanks! What are your main interests and what kind of opportunities are you looking for?"
         elif step == 2:  # After interests
             is_complete = True
+            next_question = "Thanks for sharing all this information! Your profile is now complete."
         
         return updated_profile, next_question, is_complete
         
     except Exception as e:
+        import traceback
+        stack_trace = traceback.format_exc()
         logger.error(f"Error processing onboarding message: {str(e)}")
-        raise
+        logger.error(f"Stack trace: {stack_trace}")
+        # Re-raise with more detailed information
+        error_msg = f"Error in process_onboarding_message: {str(e)}\nStep: {step}\nUser ID: {user_id}"
+        raise Exception(error_msg) from e
 
 async def generate_bio(profile: Dict[str, Any]) -> str:
     """Generate a bio using OpenAI"""

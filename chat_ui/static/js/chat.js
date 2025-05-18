@@ -396,7 +396,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     console.log("Response status:", response.status);
 
                     if (!response.ok) {
-                        throw new Error(`API error: ${response.status}`);
+                        // Get the error response
+                        const errorText = await response.text();
+                        console.error("API Error Response:", errorText);
+                        try {
+                            // Try to parse as JSON
+                            const errorJson = JSON.parse(errorText);
+                            throw new Error(`API error: ${response.status} - ${errorJson.detail || errorJson.message || errorText}`);
+                        } catch (parseError) {
+                            // If not valid JSON, use the raw text
+                            throw new Error(`API error: ${response.status} - ${errorText}`);
+                        }
                     }
 
                     const data = await response.json();

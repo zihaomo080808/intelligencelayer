@@ -40,7 +40,7 @@ async def query_user_background(profile: Dict[str, Any]) -> str:
         prompt = f"""
         Based on the following information about {name}, search for this person on the internet, generating a detailed, professional bio 
         that would describe this person well. Include relevant details to create a coherent, 
-        contextual background story:
+        contextual background story, do not output any image:
         
         Name: {name}
         Location: {location}
@@ -62,13 +62,11 @@ async def query_user_background(profile: Dict[str, Any]) -> str:
         }
         
         payload = {
-            "model": "mixtral-8x7b-instruct",
+            "model": "sonar-pro",
             "messages": [
                 {"role": "system", "content": "You are a helpful assistant that creates professional, factual user bios based on profile information."},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.2,
-            "max_tokens": 300
         }
         
         # Send the request

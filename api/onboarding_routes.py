@@ -8,6 +8,7 @@ import logging
 import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from config import settings
 
 from onboarding_messages import process_onboarding_message, extract_name_from_greeting
 from perplexity_client import query_user_background
@@ -30,7 +31,7 @@ class OnboardingMessageRequest(BaseModel):
 class OnboardingResponse(BaseModel):
     """Response model for onboarding messages"""
     profile: Dict[str, Any]
-    next_question: str
+    next_question: Optional[str] = ""
     is_complete: bool
 
 @router.post("/onboarding/process", response_model=OnboardingResponse, tags=["onboarding"])
@@ -53,15 +54,31 @@ async def process_message(request: OnboardingMessageRequest, db: AsyncSession = 
             db
         )
         
+        # Ensure next_question is never None
+        safe_next_question = next_question if next_question is not None else ""
+        
         return OnboardingResponse(
             profile=profile,
-            next_question=next_question,
+            next_question=safe_next_question,
             is_complete=is_complete
         )
         
     except Exception as e:
+        # Get detailed stack trace
+        import traceback
+        stack_trace = traceback.format_exc()
+        
+        # Log detailed error information
         logger.error(f"Error processing onboarding message: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Stack trace: {stack_trace}")
+        
+        # Return a more detailed error message to the client
+        error_detail = {
+            "message": str(e),
+            "type": type(e).__name__,
+            "stack_trace": stack_trace if settings.DEBUG else "Enable DEBUG mode for stack trace"
+        }
+        raise HTTPException(status_code=500, detail=str(error_detail))
 
 @router.post("/onboarding/extract-name", response_model=Dict[str, Any], tags=["onboarding"])
 async def extract_name(message: Dict[str, str] = Body(...)):
