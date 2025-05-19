@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     TWILIO_PHONE_NUMBER: str = os.getenv("TWILIO_PHONE_NUMBER", "")
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
 
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
     class Config:
         env_file = ".env"
 

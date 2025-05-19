@@ -11,9 +11,9 @@ kill_timeout = 5
 
 [env]
   PORT = "8000"
-  EMBEDDING_MODEL = "text-embedding-ada-002"
-  CLASSIFIER_MODEL = "gpt-4"
-  GENERATOR_MODEL = "gpt-4"
+  EMBEDDING_MODEL = "text-embedding-3-small"
+  CLASSIFIER_MODEL = "gpt-3.5-turbo"
+  GENERATOR_MODEL = "gpt-3.5-turbo"
 
 [http_service]
   internal_port = 8000

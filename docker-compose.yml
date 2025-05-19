@@ -9,8 +9,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:Mozihao08@db:5432/postgres
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-ada-002}
-      - CLASSIFIER_MODEL=${CLASSIFIER_MODEL:-gpt-4}
-      - GENERATOR_MODEL=${GENERATOR_MODEL:-gpt-4}
+      - CLASSIFIER_MODEL=${CLASSIFIER_MODEL:-o4-mini}
+      - GENERATOR_MODEL=${GENERATOR_MODEL:-o4-mini}
       - VECTOR_DIM=1536
       - VECTOR_INDEX_PATH=/app/data/vector_index
       - DEBUG=True

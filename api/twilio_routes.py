@@ -13,7 +13,6 @@ import os
 from profiles.profiles import get_profile, update_profile
 from classifier.model import predict_stance
 from embeddings.embedder import get_embedding
-from matcher.matcher import match_items, OPPS
 from generator.generator import generate_recommendation
 from database.session import get_db
 from database.models import UserConversation
@@ -26,6 +25,7 @@ from feedback.conversation import (
 )
 from config import settings
 from agents.conversation_agent import _extract_conversation_messages
+from matcher.supabase_matcher import match_opportunities
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -150,7 +150,7 @@ async def handle_sms(
             # Generate recommendations based on existing profile
             if profile.location:
                 # Filter by location if available
-                items = match_items(
+                items = match_opportunities(
                     user_embedding=profile.embedding,
                     stances=profile.stances,
                     only_type=None,
@@ -158,7 +158,7 @@ async def handle_sms(
                     cities=[profile.location]
                 )
             else:
-                items = match_items(
+                items = match_opportunities(
                     user_embedding=profile.embedding,
                     stances=profile.stances,
                     only_type=None

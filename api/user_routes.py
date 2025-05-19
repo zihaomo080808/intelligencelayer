@@ -8,12 +8,12 @@ from fastapi import Depends
 from profiles.profiles import get_profile, update_profile, record_feedback
 from classifier.model import predict_stance
 from embeddings.embedder import get_embedding
-from matcher.matcher import match_items, match_items_with_history, OPPS
 from generator.generator import generate_recommendation
 from database.session import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from database.models import UserRecommendation
+from matcher.supabase_matcher import match_opportunities
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ async def recommend(user_id: str, db: AsyncSession = Depends(get_db)):
 
         try:
             # Find new recommendations using history filtering (avoid showing the same opportunities)
-            items = await match_items_with_history(
+            items = await match_opportunities(
                 user_id=prof.user_id,
                 user_embedding=prof.embedding,
                 stances=prof.stances,
