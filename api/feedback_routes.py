@@ -4,7 +4,7 @@ API routes for handling feedback and profile updates.
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -47,7 +47,7 @@ async def update_all_profiles(
         return result
     except Exception as e:
         logger.error(f"Error updating profiles: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating profiles: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/feedback/update-profile/{user_id}")
 async def update_single_profile(
@@ -67,10 +67,7 @@ async def update_single_profile(
         return {"status": "success", "message": f"Profile updated for user {user_id}"}
     except Exception as e:
         logger.error(f"Error updating profile for user {user_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error updating profile: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/conversation")
 async def handle_conversation(
@@ -95,12 +92,9 @@ async def handle_conversation(
         conversation.transcript += f"\n[{datetime.utcnow()}] User: {request.message}"
         conversation.message_count += 1
 
-        # Get opportunity details from the context
-        opportunity = request.context or {}
-
         # Generate agent response
         agent_response = await update_conversation_with_agent_response(
-            conversation, opportunity
+            conversation, request.context or {}
         )
 
         # Save the conversation
@@ -114,9 +108,6 @@ async def handle_conversation(
 
     except Exception as e:
         logger.error(f"Error processing conversation: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-
         return {
             "status": "error",
             "message": str(e),
